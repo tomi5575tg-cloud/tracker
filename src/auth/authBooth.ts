@@ -153,7 +153,11 @@ export class AuthLockBooth {
         token: sessionData.token,
         loginTimestamp: sessionData.loginTimestamp ?? now,
         lastActiveTimestamp: sessionData.lastActiveTimestamp ?? now,
-        ...(sessionData.metadata ? { metadata: sessionData.metadata } : {}),
+        ...(sessionData.role !== undefined ? { role: sessionData.role } : {}),
+        ...(sessionData.roles !== undefined ? { roles: sessionData.roles } : {}),
+        ...(sessionData.permissions !== undefined ? { permissions: sessionData.permissions } : {}),
+        ...(sessionData.tenantId !== undefined ? { tenantId: sessionData.tenantId } : {}),
+        ...(sessionData.metadata !== undefined ? { metadata: sessionData.metadata } : {}),
       };
 
       // Zapis do bezpiecznego magazynu

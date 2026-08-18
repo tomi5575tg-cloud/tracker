@@ -19,6 +19,16 @@ export * from './auth/mobileGate.js';
 // MapLibre GL JS & clearRoute
 export * from './maplibre/types.js';
 export * from './maplibre/routeManager.js';
+export * from './maplibre/poiLayerManager.js';
+
+// POI Category Contract & Permissions Matrix
+export * from './poi/types.js';
+export * from './poi/schemaValidator.js';
+export * from './poi/permissionsMatrix.js';
+export * from './poi/defaultCategories.js';
+export * from './poi/converter.js';
+export * from './poi/categoryRegistry.js';
+export * from './poi/poiManager.js';
 
 // Integration Coordinator
 export * from './integration/coordinator.js';

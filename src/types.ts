@@ -1,4 +1,5 @@
 import type { Position, FeatureCollection, LineStringGeometry, PointGeometry, Feature } from './geojson/types.js';
+import type { UserRole, PoiPermissionAction } from './poi/types.js';
 
 export interface UserSession {
   readonly sessionId: string;
@@ -7,6 +8,10 @@ export interface UserSession {
   readonly token: string;
   readonly loginTimestamp: number;
   readonly lastActiveTimestamp: number;
+  readonly role?: UserRole;
+  readonly roles?: readonly UserRole[];
+  readonly permissions?: readonly PoiPermissionAction[];
+  readonly tenantId?: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
@@ -66,3 +71,6 @@ export interface RouteGeoJsonCollections {
   readonly routeCollection: FeatureCollection<LineStringGeometry, RouteGeoJsonFeatureProperties>;
   readonly waypointCollection: FeatureCollection<PointGeometry, WaypointGeoJsonFeatureProperties>;
 }
+
+export * from './poi/types.js';
+
