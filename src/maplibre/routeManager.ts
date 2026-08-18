@@ -5,6 +5,7 @@ import type {
   MapLibreMarker,
   MapLibrePopup,
   MapLibreLayerSpecification,
+  CameraOptions,
 } from './types.js';
 
 export interface MapRouteLayerConfig {
@@ -25,16 +26,37 @@ export const DEFAULT_ROUTE_LAYER_CONFIG: MapRouteLayerConfig = {
   waypointsSymbolLayerId: 'tracker-waypoints-symbol-layer',
 };
 
+export interface ClearRouteOptions {
+  /**
+   * Whether to reset camera view to default position/zoom upon clearing
+   */
+  readonly resetCamera?: boolean | undefined;
+  /**
+   * Default camera position for reset
+   */
+  readonly defaultCamera?: CameraOptions | undefined;
+  /**
+   * Whether to stop any ongoing map animations/transitions
+   */
+  readonly stopAnimations?: boolean | undefined;
+}
+
 export class MapLibreRouteManager {
   private readonly map: MapLibreMapInstance;
   private readonly config: MapRouteLayerConfig;
+  private readonly defaultCamera: CameraOptions;
   private markers: MapLibreMarker[] = [];
   private popups: MapLibrePopup[] = [];
   private currentRoute: RouteData | null = null;
 
-  constructor(map: MapLibreMapInstance, config: Partial<MapRouteLayerConfig> = {}) {
+  constructor(
+    map: MapLibreMapInstance,
+    config: Partial<MapRouteLayerConfig> = {},
+    defaultCamera: CameraOptions = { center: [0, 0], zoom: 1 }
+  ) {
     this.map = map;
     this.config = { ...DEFAULT_ROUTE_LAYER_CONFIG, ...config };
+    this.defaultCamera = defaultCamera;
   }
 
   public getConfig(): MapRouteLayerConfig {
@@ -43,6 +65,20 @@ export class MapLibreRouteManager {
 
   public getCurrentRoute(): RouteData | null {
     return this.currentRoute;
+  }
+
+  /**
+   * Returns list of currently tracked active markers
+   */
+  public getRegisteredMarkers(): readonly MapLibreMarker[] {
+    return this.markers;
+  }
+
+  /**
+   * Returns list of currently tracked active popups
+   */
+  public getRegisteredPopups(): readonly MapLibrePopup[] {
+    return this.popups;
   }
 
   /**
@@ -149,32 +185,69 @@ export class MapLibreRouteManager {
   }
 
   /**
-   * Register custom HTML Marker or Popup to track for clean drainage
+   * Register custom HTML Marker to track for clean drainage
    */
   public registerMarker(marker: MapLibreMarker): void {
     this.markers.push(marker);
   }
 
+  /**
+   * Unregister a marker manually if removed before drainage
+   */
+  public unregisterMarker(marker: MapLibreMarker): void {
+    const idx = this.markers.indexOf(marker);
+    if (idx !== -1) {
+      this.markers.splice(idx, 1);
+    }
+  }
+
+  /**
+   * Register custom HTML Popup to track for clean drainage
+   */
   public registerPopup(popup: MapLibrePopup): void {
     this.popups.push(popup);
   }
 
   /**
-   * DRENAŻ WIDOKU MAPY (clearRoute):
-   * 1. Zresetowanie danych GeoJSON w źródłach MapLibre do pustych FeatureCollection RFC 7946
-   * 2. Usunięcie wszystkich aktywnych Popupów i Markerów ze sceny mapy
-   * 3. Wyczyszczenie wewnętrznego stanu pamięci (currentRoute, references)
+   * Unregister a popup manually if closed before drainage
    */
-  public clearRoute(): void {
+  public unregisterPopup(popup: MapLibrePopup): void {
+    const idx = this.popups.indexOf(popup);
+    if (idx !== -1) {
+      this.popups.splice(idx, 1);
+    }
+  }
+
+  /**
+   * PANERNY DRENAŻ WIDOKU MAPY (clearRoute & Reset Mapy):
+   * 
+   * 1. Zatrzymanie wszelkich trwających animacji kamery (stop())
+   * 2. Zresetowanie danych GeoJSON w źródłach MapLibre do pustych FeatureCollection RFC 7946
+   * 3. Usunięcie i zniszczenie wszystkich aktywnych Markerów HTML
+   * 4. Usunięcie i zniszczenie wszystkich aktywnych Popupów
+   * 5. Opcjonalny reset pozycji kamery (jumpTo domyślnego widoku)
+   * 6. Całkowite wyczyszczenie wewnętrznego stanu pamięci (currentRoute, tablice referencji)
+   */
+  public clearRoute(options: ClearRouteOptions = {}): void {
+    const { resetCamera = false, defaultCamera, stopAnimations = true } = options;
+
+    // 1. Stop any ongoing flyTo/easeTo camera transitions
+    if (stopAnimations && typeof this.map.stop === 'function') {
+      try {
+        this.map.stop();
+      } catch {
+        // Safe disposal
+      }
+    }
+
+    // 2. Reset GeoJSON sources to RFC 7946 empty collections
     const emptyGeoJson = RouteGeoJsonConverter.emptyGeoJson();
 
-    // 1. Reset route line source to empty RFC 7946 FeatureCollection
     const routeSource = this.map.getSource(this.config.routeSourceId);
     if (routeSource) {
       routeSource.setData(emptyGeoJson.routeCollection);
     }
 
-    // 2. Reset waypoints source to empty RFC 7946 FeatureCollection
     const waypointsSource = this.map.getSource(this.config.waypointsSourceId);
     if (waypointsSource) {
       waypointsSource.setData(emptyGeoJson.waypointCollection);
@@ -200,15 +273,24 @@ export class MapLibreRouteManager {
     }
     this.popups = [];
 
-    // 5. Clear stored route state
+    // 5. Reset camera position if requested
+    if (resetCamera && typeof this.map.jumpTo === 'function') {
+      try {
+        this.map.jumpTo(defaultCamera ?? this.defaultCamera);
+      } catch {
+        // Safe disposal
+      }
+    }
+
+    // 6. Clear stored route state
     this.currentRoute = null;
   }
 
   /**
-   * Complete destruction of layers and sources (for component unmount or map re-initialization)
+   * Complete destruction of layers, sources and tracked elements (for unmounting)
    */
   public destroy(): void {
-    this.clearRoute();
+    this.clearRoute({ resetCamera: false, stopAnimations: true });
 
     const layersToRemove = [
       this.config.waypointsSymbolLayerId,

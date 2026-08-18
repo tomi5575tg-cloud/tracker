@@ -6,6 +6,7 @@ import type {
   MapLibreMarker,
   MapLibrePopup,
   MapLibreLayerSpecification,
+  CameraOptions,
 } from '../../src/maplibre/types.js';
 import type { RouteData } from '../../src/types.js';
 import type { FeatureCollection } from '../../src/geojson/types.js';
@@ -14,6 +15,9 @@ class MockMapLibreMap implements MapLibreMapInstance {
   private styleLoaded = true;
   private sources = new Map<string, { type: 'geojson'; data: FeatureCollection | string }>();
   private layers = new Map<string, MapLibreLayerSpecification>();
+
+  public stopped = false;
+  public cameraState: CameraOptions = { center: [0, 0], zoom: 1 };
 
   public isStyleLoaded(): boolean {
     return this.styleLoaded;
@@ -61,9 +65,17 @@ class MockMapLibreMap implements MapLibreMapInstance {
   }
   public on(): void {}
   public off(): void {}
+
+  public stop(): void {
+    this.stopped = true;
+  }
+
+  public jumpTo(options: CameraOptions): void {
+    this.cameraState = { ...this.cameraState, ...options };
+  }
 }
 
-describe('MapLibreRouteManager & clearRoute (Drenaz Sesji)', () => {
+describe('MapLibreRouteManager & clearRoute (Pancerny Drenaz i Reset Mapy)', () => {
   it('should initialize layers and render route onto MapLibre sources', () => {
     const mockMap = new MockMapLibreMap();
     const routeManager = new MapLibreRouteManager(mockMap);
@@ -123,11 +135,16 @@ describe('MapLibreRouteManager & clearRoute (Drenaz Sesji)', () => {
     const mockPopup = { remove: removePopup } as unknown as MapLibrePopup;
     routeManager.registerPopup(mockPopup);
 
+    expect(routeManager.getRegisteredMarkers()).toHaveLength(1);
+    expect(routeManager.getRegisteredPopups()).toHaveLength(1);
+
     // Trigger clearRoute
     routeManager.clearRoute();
 
     // Verify route state cleared
     expect(routeManager.getCurrentRoute()).toBeNull();
+    expect(routeManager.getRegisteredMarkers()).toHaveLength(0);
+    expect(routeManager.getRegisteredPopups()).toHaveLength(0);
 
     // Verify GeoJSON sources reset to empty RFC 7946 collections
     const routeSourceData = mockMap.getSourceData('tracker-route-source') as FeatureCollection;
@@ -142,5 +159,53 @@ describe('MapLibreRouteManager & clearRoute (Drenaz Sesji)', () => {
     // Verify Markers and Popups were destroyed
     expect(removeMarker).toHaveBeenCalledTimes(1);
     expect(removePopup).toHaveBeenCalledTimes(1);
+  });
+
+  it('should stop active camera animations and reset camera view if resetCamera option is enabled', () => {
+    const mockMap = new MockMapLibreMap();
+    const defaultCam: CameraOptions = { center: [19.0, 52.0], zoom: 6 };
+    const routeManager = new MapLibreRouteManager(mockMap, {}, defaultCam);
+
+    // Set camera to some route focus
+    mockMap.cameraState = { center: [21.0, 52.2], zoom: 16 };
+
+    routeManager.clearRoute({ resetCamera: true, stopAnimations: true });
+
+    expect(mockMap.stopped).toBe(true);
+    expect(mockMap.cameraState.center).toEqual([19.0, 52.0]);
+    expect(mockMap.cameraState.zoom).toBe(6);
+  });
+
+  it('should handle unregisterMarker and unregisterPopup gracefully', () => {
+    const mockMap = new MockMapLibreMap();
+    const routeManager = new MapLibreRouteManager(mockMap);
+
+    const marker = { remove: vi.fn() } as unknown as MapLibreMarker;
+    const popup = { remove: vi.fn() } as unknown as MapLibrePopup;
+
+    routeManager.registerMarker(marker);
+    routeManager.registerPopup(popup);
+
+    expect(routeManager.getRegisteredMarkers()).toHaveLength(1);
+    expect(routeManager.getRegisteredPopups()).toHaveLength(1);
+
+    routeManager.unregisterMarker(marker);
+    routeManager.unregisterPopup(popup);
+
+    expect(routeManager.getRegisteredMarkers()).toHaveLength(0);
+    expect(routeManager.getRegisteredPopups()).toHaveLength(0);
+  });
+
+  it('should safely destroy all map layers and sources upon destroy()', () => {
+    const mockMap = new MockMapLibreMap();
+    const routeManager = new MapLibreRouteManager(mockMap);
+
+    routeManager.ensureLayers();
+    expect(mockMap.getSource('tracker-route-source')).toBeDefined();
+
+    routeManager.destroy();
+
+    expect(mockMap.getSource('tracker-route-source')).toBeUndefined();
+    expect(mockMap.getSource('tracker-waypoints-source')).toBeUndefined();
   });
 });

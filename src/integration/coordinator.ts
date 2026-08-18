@@ -1,37 +1,50 @@
 import type { RouteData, UserSession } from '../types.js';
-import type { MapLibreRouteManager } from '../maplibre/routeManager.js';
+import type { MapLibreRouteManager, ClearRouteOptions } from '../maplibre/routeManager.js';
 import type { AuthLockBooth } from '../auth/authBooth.js';
 import type { SessionDrainHook } from '../auth/drainManager.js';
 
 export interface RouteSessionDrainHookOptions {
   readonly routeManager: MapLibreRouteManager;
+  readonly clearRouteOptions?: ClearRouteOptions | undefined;
   readonly onRouteDrained?: ((reason: string, previousSession: unknown) => void) | undefined;
 }
 
 export class RouteSessionDrainHook implements SessionDrainHook {
   private readonly routeManager: MapLibreRouteManager;
+  private readonly clearRouteOptions: ClearRouteOptions | undefined;
   private readonly onRouteDrained: ((reason: string, previousSession: unknown) => void) | undefined;
 
   constructor(options: RouteSessionDrainHookOptions) {
     this.routeManager = options.routeManager;
+    this.clearRouteOptions = options.clearRouteOptions;
     this.onRouteDrained = options.onRouteDrained;
   }
 
   public drain(reason: string, previousSession: unknown): void {
-    // Execute clearRoute on MapLibre manager
-    this.routeManager.clearRoute();
+    // Execute clearRoute on MapLibre manager with options
+    this.routeManager.clearRoute(this.clearRouteOptions);
     this.onRouteDrained?.(reason, previousSession);
   }
+}
+
+export interface SecureTrackingCoordinatorConfig {
+  readonly clearRouteOptions?: ClearRouteOptions | undefined;
 }
 
 export class SecureTrackingSessionCoordinator {
   private readonly authBooth: AuthLockBooth;
   private readonly routeManager: MapLibreRouteManager;
+  private readonly config: SecureTrackingCoordinatorConfig;
   private unregisterDrainHook: (() => void) | undefined;
 
-  constructor(authBooth: AuthLockBooth, routeManager: MapLibreRouteManager) {
+  constructor(
+    authBooth: AuthLockBooth,
+    routeManager: MapLibreRouteManager,
+    config: SecureTrackingCoordinatorConfig = {}
+  ) {
     this.authBooth = authBooth;
     this.routeManager = routeManager;
+    this.config = config;
     this.setupIntegration();
   }
 
@@ -39,6 +52,7 @@ export class SecureTrackingSessionCoordinator {
     // Register MapLibre clearRoute as a primary SessionDrainHook on the Auth Booth
     const drainHook = new RouteSessionDrainHook({
       routeManager: this.routeManager,
+      clearRouteOptions: this.config.clearRouteOptions,
     });
 
     this.unregisterDrainHook = this.authBooth.registerDrainHook(drainHook);
@@ -67,8 +81,8 @@ export class SecureTrackingSessionCoordinator {
   /**
    * Manually clear route if required
    */
-  public clearRoute(): void {
-    this.routeManager.clearRoute();
+  public clearRoute(options?: ClearRouteOptions): void {
+    this.routeManager.clearRoute(options ?? this.config.clearRouteOptions);
   }
 
   /**

@@ -1,5 +1,19 @@
 import type { FeatureCollection } from '../geojson/types.js';
 
+export interface CameraOptions {
+  center?: [number, number] | undefined;
+  zoom?: number | undefined;
+  bearing?: number | undefined;
+  pitch?: number | undefined;
+}
+
+export interface FitBoundsOptions {
+  padding?: number | { top: number; bottom: number; left: number; right: number } | undefined;
+  linear?: boolean | undefined;
+  duration?: number | undefined;
+  maxZoom?: number | undefined;
+}
+
 /**
  * Interface compatible with MapLibre GL JS GeoJSONSource
  */
@@ -54,6 +68,11 @@ export interface MapLibreMapInstance {
   setLayoutProperty(layerId: string, name: string, value: unknown): void;
   setPaintProperty(layerId: string, name: string, value: unknown): void;
   isStyleLoaded(): boolean;
+  jumpTo?(options: CameraOptions): void;
+  easeTo?(options: CameraOptions & { duration?: number }): void;
+  flyTo?(options: CameraOptions & { duration?: number }): void;
+  fitBounds?(bounds: [[number, number], [number, number]] | [number, number, number, number], options?: FitBoundsOptions): void;
+  stop?(): void;
   once(event: string, listener: (...args: unknown[]) => void): void;
   on(event: string, listener: (...args: unknown[]) => void): void;
   off(event: string, listener: (...args: unknown[]) => void): void;
