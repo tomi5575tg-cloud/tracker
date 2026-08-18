@@ -1,20 +1,37 @@
-# Tracker — Śluza Logowania, Drenaż Sesji, Kontrakt POI, Matryca Uprawnień i Generator Zapytań Przestrzennych
+# Tracker — Śluza Logowania, Drenaż Sesji, Kontrakt POI, Matryca Uprawnień, Generator Zapytań Przestrzennych i Lekki Adapter MapLibre GL JS
 
-Pancerna, modularna implementacja architektury bezpieczeństwa sesji, wizualizacji telemetrycznej, punktów zainteresowania (POI), kontroli dostępu oraz silnika geodezyjnego i zapytań przestrzennych w oparciu o:
+Pancerna, modularna implementacja architektury bezpieczeństwa sesji, wizualizacji telemetrycznej, punktów zainteresowania (POI), kontroli dostępu, silnika geodezyjnego oraz lekkiego adaptera GeoJSON dla MapLibre GL JS w oparciu o:
 - **TypeScript** (Strict Mode, `exactOptionalPropertyTypes`, 100% type-safe)
+- **Lekki Adapter GeoJSON dla MapLibre GL JS** (`MapLibreGeoJsonAdapter`, `MapLibreExpressions`, zarządzanie cyklem życia warstw, buforowanie/debouncing, interaktywny `feature-state` i zdarzenia `onFeatureClick`/`onFeatureHover`)
 - **Generator Zapytań Przestrzennych & Indeks Przestrzenny** (Bounding Box, Radius / Bufor kołowy, Korytarz trasy, Poligony, wzory Haversine i rzutowanie wektorowe)
 - **Wielobazowy Eksport Zapytań** (PostGIS `ST_MakeEnvelope` / `ST_DWithin`, MongoDB `$geoWithin` / `$centerSphere`, SQLite bounding box, URL Query Params, RFC 7946 Polygon)
 - **Kontrakt Kategorii POI** (Schematy atrybutów, typowanie, reguły walidacji i stylizacja mapowa)
 - **Matryca Uprawnień RBAC / ABAC** (Role, granularne uprawnienia, ochrona kategorii systemowych i maskowanie pól poufnych)
-- **MapLibre GL JS** (Dynamiczne źródła GeoJSON, warstwy POI i tras, zarządzanie markerami i popupami, drenaż pamięci)
 - **RFC 7946 GeoJSON** (Ścisła walidacja geometrii `[longitude, latitude]` WGS84 oraz `FeatureCollection`)
-- **Śluza Logowania (Zasada Jednej Kabiny)** i **Pancerny Drenaż Sesji (`clearRoute`, `clearPoi`)**
+- **Śluza Logowania (Zasada Jednej Kabiny)** i **Pancerny Drenaż Sesji (`clearRoute`, `clearPoi`, `clear`)**
 
 ---
 
 ## Główne Moduły i Koncepcje
 
-### 1. Generator Zapytań Przestrzennych (`SpatialQueryGenerator` & `GeoSpatialUtils`)
+### 1. Lekki Adapter GeoJSON dla Silnika MapLibre GL JS (`src/maplibre/geoJsonAdapter.ts` & `src/maplibre/expressions.ts`)
+Wysokowydajny, modularny adapter integrujący dane GeoJSON ze stylem i silnikiem MapLibre GL JS:
+- **Zarządzanie Źródłem i Warstwami (`MapLibreGeoJsonAdapter`)**:
+  - Automatyczna rejestracja źródła GeoJSON i warstw (`circle`, `symbol`, `line`, `fill`, `heatmap`, `fill-extrusion`) z obsługą dynamicznego ładowania i przeładowywania stylów mapy (`style.load`).
+  - Optymalizacja transferu danych: bezpośrednia aktualizacja przez `setData()` lub buforowana / odroczona przez `setDataDebounced(data, delayMs)` dla szybkiego strumieniowania telemetrii GPS.
+  - Automatyczne dopasowanie kamery do granic danych (`autoFitBounds`, `fitToData()`).
+- **Interaktywność i Zarządzanie Stanem (`feature-state`)**:
+  - `setHoveredFeature(id)` / `setSelectedFeature(id)`: automatyczne przełączanie stanów `hover` i `selected` w silniku GPU MapLibre.
+  - `changeCursorOnHover`: automatyczna zmiana kursora myszy (`pointer`, `crosshair`).
+  - Rejestracja zdarzeń: `onFeatureClick(layerId, handler)` oraz `onFeatureHover(layerId, handler)`.
+- **Pomocnik Wyrażeń MapLibre (`MapLibreExpressions`)**:
+  - Type-safe budowanie wyrażeń warstw: `get()`, `featureState()`, `hoverState()`, `selectedState()`, `matchProperty()`, `interpolateZoom()`, `clusterColor()`, `clusterRadius()`.
+- **Pancerny Drenaż Pamięci i Sesji (`SessionDrainHook`)**:
+  - Implementacja `drain()` / `clear()` — natychmiastowe resetowanie źródła do pustego `FeatureCollection`, wyczyszczenie stanów obiektów, markerów HTML (`MapLibreMarker`) i popupów (`MapLibrePopup`).
+
+---
+
+### 2. Generator Zapytań Przestrzennych (`SpatialQueryGenerator` & `GeoSpatialUtils`)
 Moduł geodezyjny i generator zapytań przestrzennych (`src/spatial/`):
 - **Wzory Geodezyjne i Matematyka Przestrzenna (`GeoSpatialUtils`)**:
   - `haversineDistance(coordA, coordB)`: Precyzyjna odległość ortodromiczna w metrach (Great-Circle Distance) na elipsoidzie WGS84.
@@ -37,7 +54,7 @@ Moduł geodezyjny i generator zapytań przestrzennych (`src/spatial/`):
 
 ---
 
-### 2. Indeks Przestrzenny i Wyszukiwanie POI (`SpatialPoiIndex` & `PoiManager`)
+### 3. Indeks Przestrzenny i Wyszukiwanie POI (`SpatialPoiIndex` & `PoiManager`)
 - Wbudowany in-memory indeks przestrzenny zintegrowany z silnikiem kontroli dostępu RBAC/ABAC:
   - `searchBBox(bbox, options)`
   - `searchRadius(center, radiusMeters, options)`
@@ -48,7 +65,7 @@ Moduł geodezyjny i generator zapytań przestrzennych (`src/spatial/`):
 
 ---
 
-### 3. Kontrakt Kategorii POI (`src/poi/`)
+### 4. Kontrakt Kategorii POI (`src/poi/`)
 Zapewnia ustrukturyzowany, zwalidowany schemat danych dla punktów zainteresowania (POI) w systemie:
 - **Hierarchia i Klasyfikacja**:
   - `classification`: `'SYSTEM'` (wbudowane kategorie bazowe) vs `'CUSTOM'` (tworzone przez organizację/użytkownika).
@@ -70,7 +87,7 @@ Zapewnia ustrukturyzowany, zwalidowany schemat danych dla punktów zainteresowan
 
 ---
 
-### 4. Matryca Uprawnień (Permissions Matrix — `src/poi/permissionsMatrix.ts`)
+### 5. Matryca Uprawnień (Permissions Matrix — `src/poi/permissionsMatrix.ts`)
 Zaawansowany silnik kontroli dostępu (RBAC z elementami ABAC) integrujący się z tożsamością sesji (`UserSession`):
 - **Role Systemowe**: `ADMIN`, `DISPATCHER`, `MANAGER`, `OPERATOR`, `DRIVER`, `AUDITOR`, `VIEWER`, `GUEST`.
 - **Zabezpieczenia Biznesowe**:
@@ -80,8 +97,7 @@ Zaawansowany silnik kontroli dostępu (RBAC z elementami ABAC) integrujący się
 
 ---
 
-### 5. Integracja z MapLibre GL JS i Koordynatorem Sesji (`src/maplibre/`, `src/integration/`)
-- `MapLibrePoiLayerManager`: Zarządza źródłami GeoJSON i warstwami POI na mapie (`circle`, `symbol`, `cluster`). Procedura `clearPoi()` natychmiast resetuje źródło do pustej `FeatureCollection` oraz niszczy markery i popupy HTML.
+### 6. Integracja z Koordynatorem Sesji (`src/integration/`)
 - `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager` oraz `PoiManager` w spójny ekosystem bezpieczeństwa:
   - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje zarówno trasę (`clearRoute`), jak i punkty POI (`clearPoi`).
   - Wyświetlanie POI (`displayPois`) automatycznie respektuje uprawnienia aktywnej sesji.
@@ -92,6 +108,12 @@ Zaawansowany silnik kontroli dostępu (RBAC z elementami ABAC) integrujący się
 
 ```
 src/
+├── maplibre/
+│   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS, zdarzeń i opcji
+│   ├── expressions.ts        # Helper wyrażeń stylów (feature-state, match, interpolate)
+│   ├── geoJsonAdapter.ts     # Lekki Adapter GeoJSON z cyklem życia i drenażem
+│   ├── routeManager.ts       # Zarządzanie trasami i procedura clearRoute
+│   └── poiLayerManager.ts    # Zarządzanie warstwami POI i procedura clearPoi
 ├── spatial/
 │   ├── types.ts              # Definicje typów zapytań przestrzennych (BBox, Radius, Corridor)
 │   ├── geoUtils.ts           # Obliczenia geodezyjne (Haversine, DestinationPoint, Poligony)
@@ -116,10 +138,6 @@ src/
 │   ├── authBooth.ts          # Śluza Logowania (Zasada Jednej Kabiny)
 │   ├── mobileTypes.ts        # Typy autoryzacji mobilnej i bootstrapu
 │   └── mobileGate.ts         # Śluza startowa mobilki (MobileAuthGate)
-├── maplibre/
-│   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS
-│   ├── routeManager.ts       # Zarządzanie trasami i procedura clearRoute
-│   └── poiLayerManager.ts    # Zarządzanie warstwami POI i procedura clearPoi
 ├── integration/
 │   └── coordinator.ts        # Koordynator sesji, tras i POI (SecureTrackingSessionCoordinator)
 └── index.ts                  # Główny punkt eksportu biblioteki
@@ -129,7 +147,40 @@ src/
 
 ## Przykładowe Użycie
 
-### 1. Generowanie Zapytań Przestrzennych dla PostGIS, MongoDB i HTTP API
+### 1. Użycie Lekkiego Adaptera GeoJSON dla MapLibre GL JS
+
+```typescript
+import { MapLibreGeoJsonAdapter, MapLibreExpressions } from 'tracker';
+
+// Inicjalizacja adaptera
+const poiAdapter = new MapLibreGeoJsonAdapter(mapInstance, {
+  sourceId: 'live-poi-source',
+  changeCursorOnHover: true,
+  autoFitBounds: true,
+  layers: [
+    {
+      id: 'poi-circles',
+      type: 'circle',
+      paint: {
+        'circle-radius': MapLibreExpressions.hoverState(10, 6),
+        'circle-color': MapLibreExpressions.get('markerColor'),
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#FFFFFF',
+      },
+    },
+  ],
+});
+
+// Rejestracja kliknięcia
+poiAdapter.onFeatureClick('poi-circles', (feature, event) => {
+  console.log('Kliknięto punkt:', feature.properties.name);
+});
+
+// Strumieniowe ładowanie danych
+poiAdapter.setData(poiFeatureCollection);
+```
+
+### 2. Generowanie Zapytań Przestrzennych dla PostGIS, MongoDB i HTTP API
 
 ```typescript
 import { SpatialQueryGenerator } from 'tracker';
@@ -142,38 +193,6 @@ const radiusQuery = SpatialQueryGenerator.fromRadius([21.0122, 52.2297], 25000, 
 
 console.log('PostGIS SQL:', radiusQuery.postGis.sql);
 // -> ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
-
-console.log('MongoDB Filter:', JSON.stringify(radiusQuery.mongoDb.filter));
-// -> {"location":{"$geoWithin":{"$centerSphere":[[21.0122, 52.2297], 0.00392]}}}
-
-console.log('URL Params:', radiusQuery.urlParams);
-// -> { spatial_type: 'radius', lat: '52.2297', lon: '21.0122', radius: '25000', categories: 'fuel_station', limit: '50' }
-```
-
-### 2. Wyszukiwanie POI w promieniu i wzdłuż korytarza trasy
-
-```typescript
-import { PoiManager, AuthLockBooth, SafeBrowserStorageProvider } from 'tracker';
-
-const authBooth = new AuthLockBooth({ storage: new SafeBrowserStorageProvider() });
-const poiManager = new PoiManager({ authBooth });
-
-// Logowanie Kierowcy
-await authBooth.enterBooth({
-  sessionId: 'sess-driver',
-  userId: 'driver-01',
-  username: 'driver_mike',
-  token: 'jwt-driver-token',
-  role: 'DRIVER',
-});
-
-// Wyszukiwanie stacji paliw w promieniu 15 km
-const nearbyGasStations = poiManager.searchRadius([21.0122, 52.2297], 15000, {
-  categoryIds: ['fuel_station'],
-  sortByDistance: true,
-});
-
-console.log(`Znaleziono ${nearbyGasStations.totalMatches} stacji w pobliżu`);
 ```
 
 ---
@@ -181,7 +200,7 @@ console.log(`Znaleziono ${nearbyGasStations.totalMatches} stacji w pobliżu`);
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 89 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 102 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)

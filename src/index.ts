@@ -16,8 +16,10 @@ export * from './auth/authBooth.js';
 export * from './auth/mobileTypes.js';
 export * from './auth/mobileGate.js';
 
-// MapLibre GL JS & clearRoute
+// MapLibre GL JS & Lightweight GeoJSON Adapter
 export * from './maplibre/types.js';
+export * from './maplibre/expressions.js';
+export * from './maplibre/geoJsonAdapter.js';
 export * from './maplibre/routeManager.js';
 export * from './maplibre/poiLayerManager.js';
 

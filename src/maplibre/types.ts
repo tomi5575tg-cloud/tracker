@@ -1,4 +1,4 @@
-import type { FeatureCollection } from '../geojson/types.js';
+import type { FeatureCollection, Feature, Geometry } from '../geojson/types.js';
 
 export interface CameraOptions {
   center?: [number, number] | undefined;
@@ -14,11 +14,29 @@ export interface FitBoundsOptions {
   maxZoom?: number | undefined;
 }
 
+export interface GeoJsonSourceSpecification {
+  type: 'geojson';
+  data: FeatureCollection<any, any> | string;
+  cluster?: boolean | undefined;
+  clusterMaxZoom?: number | undefined;
+  clusterRadius?: number | undefined;
+  clusterProperties?: Record<string, unknown> | undefined;
+  lineMetrics?: boolean | undefined;
+  promoteId?: string | undefined;
+  generateId?: boolean | undefined;
+  tolerance?: number | undefined;
+  buffer?: number | undefined;
+  maxzoom?: number | undefined;
+}
+
 /**
  * Interface compatible with MapLibre GL JS GeoJSONSource
  */
 export interface MapLibreGeoJsonSource {
-  setData(data: FeatureCollection | string): MapLibreGeoJsonSource | void;
+  setData(data: FeatureCollection<any, any> | string): MapLibreGeoJsonSource | void;
+  getClusterExpansionZoom?(clusterId: number, callback: (error: Error | null, zoom: number) => void): void;
+  getClusterChildren?(clusterId: number, callback: (error: Error | null, features: Feature[]) => void): void;
+  getClusterLeaves?(clusterId: number, limit: number, offset: number, callback: (error: Error | null, features: Feature[]) => void): void;
 }
 
 /**
@@ -26,10 +44,29 @@ export interface MapLibreGeoJsonSource {
  */
 export interface MapLibreLayerSpecification {
   id: string;
-  type: 'line' | 'symbol' | 'circle' | 'fill' | string;
+  type: 'line' | 'symbol' | 'circle' | 'fill' | 'fill-extrusion' | 'heatmap' | 'raster' | string;
   source: string;
+  sourceLayer?: string | undefined;
+  minzoom?: number | undefined;
+  maxzoom?: number | undefined;
+  filter?: unknown[] | undefined;
   layout?: Record<string, unknown> | undefined;
   paint?: Record<string, unknown> | undefined;
+  [key: string]: unknown;
+}
+
+export interface MapLibreFeatureStateFeature {
+  source: string;
+  id: string | number;
+  sourceLayer?: string | undefined;
+}
+
+export interface MapLibreLayerEvent<F = Feature<Geometry, Record<string, unknown>>> {
+  point?: { x: number; y: number } | undefined;
+  lngLat?: { lng: number; lat: number } | undefined;
+  features?: F[] | undefined;
+  originalEvent?: Event | undefined;
+  defaultPrevented?: boolean | undefined;
   [key: string]: unknown;
 }
 
@@ -60,20 +97,54 @@ export interface MapLibrePopup {
  */
 export interface MapLibreMapInstance {
   getSource(id: string): MapLibreGeoJsonSource | undefined;
-  addSource(id: string, source: { type: 'geojson'; data: FeatureCollection | string }): void;
+  addSource(id: string, source: GeoJsonSourceSpecification | { type: 'geojson'; data: FeatureCollection<any, any> | string }): void;
   removeSource(id: string): void;
   getLayer(id: string): unknown | undefined;
   addLayer(layer: MapLibreLayerSpecification, beforeId?: string): void;
   removeLayer(id: string): void;
   setLayoutProperty(layerId: string, name: string, value: unknown): void;
   setPaintProperty(layerId: string, name: string, value: unknown): void;
+  setFilter?(layerId: string, filter: unknown[] | null | undefined): void;
+  getFilter?(layerId: string): unknown[] | undefined;
   isStyleLoaded(): boolean;
   jumpTo?(options: CameraOptions): void;
   easeTo?(options: CameraOptions & { duration?: number }): void;
   flyTo?(options: CameraOptions & { duration?: number }): void;
   fitBounds?(bounds: [[number, number], [number, number]] | [number, number, number, number], options?: FitBoundsOptions): void;
   stop?(): void;
+  setFeatureState?(feature: MapLibreFeatureStateFeature, state: Record<string, unknown>): void;
+  getFeatureState?(feature: MapLibreFeatureStateFeature): Record<string, unknown> | undefined;
+  removeFeatureState?(feature: MapLibreFeatureStateFeature, key?: string): void;
+  getCanvas?(): { style: { cursor: string } } | HTMLCanvasElement;
+  getContainer?(): HTMLElement;
   once(event: string, listener: (...args: unknown[]) => void): void;
   on(event: string, listener: (...args: unknown[]) => void): void;
+  on(event: string, layerId: string, listener: (e: MapLibreLayerEvent<any>) => void): void;
   off(event: string, listener: (...args: unknown[]) => void): void;
+  off(event: string, layerId: string, listener: (e: MapLibreLayerEvent<any>) => void): void;
+}
+
+/**
+ * Adapter Configuration Definitions
+ */
+export interface AdapterLayerConfig {
+  readonly id: string;
+  readonly type: 'line' | 'symbol' | 'circle' | 'fill' | 'heatmap' | 'fill-extrusion' | string;
+  readonly beforeId?: string | undefined;
+  readonly minzoom?: number | undefined;
+  readonly maxzoom?: number | undefined;
+  readonly filter?: unknown[] | undefined;
+  readonly layout?: Record<string, unknown> | undefined;
+  readonly paint?: Record<string, unknown> | undefined;
+}
+
+export interface MapLibreAdapterOptions {
+  readonly sourceId: string;
+  readonly sourceOptions?: Omit<GeoJsonSourceSpecification, 'type' | 'data'> | undefined;
+  readonly layers?: readonly AdapterLayerConfig[] | undefined;
+  readonly debounceMs?: number | undefined;
+  readonly changeCursorOnHover?: boolean | undefined;
+  readonly hoverCursor?: string | undefined;
+  readonly autoFitBounds?: boolean | undefined;
+  readonly fitBoundsOptions?: FitBoundsOptions | undefined;
 }
