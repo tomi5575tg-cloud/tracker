@@ -1,3 +1,4 @@
+import type { Position } from '../geojson/types.js';
 import type { UserSession } from '../types.js';
 import type {
   PoiItem,
@@ -9,6 +10,13 @@ import { PoiCategoryRegistry } from './categoryRegistry.js';
 import { PoiSchemaValidator } from './schemaValidator.js';
 import { PermissionsMatrixEngine } from './permissionsMatrix.js';
 import { PoiGeoJsonConverter } from './converter.js';
+import { SpatialPoiIndex } from '../spatial/spatialIndex.js';
+import type {
+  BoundingBoxInput,
+  SpatialSearchResult,
+  SpatialExecutionOptions,
+  SpatialQueryCriteria,
+} from '../spatial/types.js';
 import type { SessionDrainHook } from '../auth/drainManager.js';
 import type { AuthLockBooth } from '../auth/authBooth.js';
 
@@ -268,6 +276,56 @@ export class PoiManager implements SessionDrainHook {
   }
 
   /**
+   * Spatial Search: Find POIs within a Bounding Box (BBox) with permission filtering.
+   */
+  public searchBBox(
+    bbox: BoundingBoxInput,
+    options: SpatialExecutionOptions = {}
+  ): SpatialSearchResult<PoiItem> {
+    const subject = options.subject ?? this.authBooth?.getSession() ?? undefined;
+    const index = this.createSpatialIndex();
+    return index.searchBBox(bbox, { ...options, subject });
+  }
+
+  /**
+   * Spatial Search: Find POIs within a circular Radius (meters) with permission filtering.
+   */
+  public searchRadius(
+    center: Position,
+    radiusMeters: number,
+    options: SpatialExecutionOptions = {}
+  ): SpatialSearchResult<PoiItem> {
+    const subject = options.subject ?? this.authBooth?.getSession() ?? undefined;
+    const index = this.createSpatialIndex();
+    return index.searchRadius(center, radiusMeters, { ...options, subject });
+  }
+
+  /**
+   * Spatial Search: Find POIs along a Route Corridor with buffer (meters).
+   */
+  public searchCorridor(
+    coordinates: readonly Position[],
+    bufferMeters: number,
+    options: SpatialExecutionOptions = {}
+  ): SpatialSearchResult<PoiItem> {
+    const subject = options.subject ?? this.authBooth?.getSession() ?? undefined;
+    const index = this.createSpatialIndex();
+    return index.searchCorridor(coordinates, bufferMeters, { ...options, subject });
+  }
+
+  /**
+   * Spatial Search: Execute a generic Spatial Query criteria.
+   */
+  public executeSpatialQuery(
+    criteria: SpatialQueryCriteria,
+    options: SpatialExecutionOptions = {}
+  ): SpatialSearchResult<PoiItem> {
+    const subject = options.subject ?? this.authBooth?.getSession() ?? undefined;
+    const index = this.createSpatialIndex();
+    return index.executeSpatialQuery(criteria, { ...options, subject });
+  }
+
+  /**
    * Exports POIs as an RFC 7946 FeatureCollection, customized for the user's permissions.
    */
   public toGeoJson(
@@ -306,5 +364,13 @@ export class PoiManager implements SessionDrainHook {
       this.unregisterDrainHook();
       this.unregisterDrainHook = undefined;
     }
+  }
+
+  private createSpatialIndex(): SpatialPoiIndex {
+    return new SpatialPoiIndex({
+      items: Array.from(this.items.values()),
+      permissionsEngine: this.permissionsEngine,
+      categoryLookup: this.categoryRegistry.getCategoryMap(),
+    });
   }
 }

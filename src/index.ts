@@ -30,5 +30,11 @@ export * from './poi/converter.js';
 export * from './poi/categoryRegistry.js';
 export * from './poi/poiManager.js';
 
+// Spatial Query Generator & Index
+export * from './spatial/types.js';
+export * from './spatial/geoUtils.js';
+export * from './spatial/queryGenerator.js';
+export * from './spatial/spatialIndex.js';
+
 // Integration Coordinator
 export * from './integration/coordinator.js';
