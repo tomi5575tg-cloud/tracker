@@ -12,6 +12,10 @@ export * from './auth/storage.js';
 export * from './auth/drainManager.js';
 export * from './auth/authBooth.js';
 
+// Mobile Startup Auth Gate
+export * from './auth/mobileTypes.js';
+export * from './auth/mobileGate.js';
+
 // MapLibre GL JS & clearRoute
 export * from './maplibre/types.js';
 export * from './maplibre/routeManager.js';
