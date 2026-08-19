@@ -93,6 +93,20 @@ export interface MapLibrePopup {
 }
 
 /**
+ * MapLibre 3D Light Specification
+ * https://maplibre.org/maplibre-style-spec/light/
+ */
+export interface MapLibreLightSpecification {
+  anchor?: 'map' | 'viewport' | undefined;
+  color?: string | undefined;
+  intensity?: number | undefined;
+  position?: [radial: number, azimuthal: number, polar: number] | undefined;
+  'color-transition'?: { duration?: number; delay?: number } | undefined;
+  'intensity-transition'?: { duration?: number; delay?: number } | undefined;
+  'position-transition'?: { duration?: number; delay?: number } | undefined;
+}
+
+/**
  * Abstraction of the MapLibre GL JS Map instance
  */
 export interface MapLibreMapInstance {
@@ -106,6 +120,8 @@ export interface MapLibreMapInstance {
   setPaintProperty(layerId: string, name: string, value: unknown): void;
   setFilter?(layerId: string, filter: unknown[] | null | undefined): void;
   getFilter?(layerId: string): unknown[] | undefined;
+  setLight?(light: MapLibreLightSpecification): void;
+  getLight?(): MapLibreLightSpecification | undefined;
   isStyleLoaded(): boolean;
   jumpTo?(options: CameraOptions): void;
   easeTo?(options: CameraOptions & { duration?: number }): void;

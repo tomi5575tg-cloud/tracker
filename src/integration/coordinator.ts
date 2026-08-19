@@ -2,6 +2,7 @@ import type { RouteData, UserSession } from '../types.js';
 import type { MapLibreRouteManager, ClearRouteOptions } from '../maplibre/routeManager.js';
 import type { MapLibrePoiLayerManager } from '../maplibre/poiLayerManager.js';
 import type { TacticalBottomSheetController } from '../components/TacticalBottomSheet.js';
+import type { DynamicLightingManager } from '../lighting/dynamicLightingManager.js';
 import type { PoiManager } from '../poi/poiManager.js';
 import type { PoiItem, PoiGeoJsonFeatureCollection } from '../poi/types.js';
 import type { AuthLockBooth } from '../auth/authBooth.js';
@@ -36,6 +37,7 @@ export interface SecureTrackingCoordinatorConfig {
   readonly poiLayerManager?: MapLibrePoiLayerManager | undefined;
   readonly poiManager?: PoiManager | undefined;
   readonly tacticalBottomSheet?: TacticalBottomSheetController | undefined;
+  readonly dynamicLightingManager?: DynamicLightingManager | undefined;
 }
 
 export class SecureTrackingSessionCoordinator {
@@ -44,6 +46,7 @@ export class SecureTrackingSessionCoordinator {
   private readonly poiLayerManager: MapLibrePoiLayerManager | undefined;
   private readonly poiManager: PoiManager | undefined;
   private readonly tacticalBottomSheet: TacticalBottomSheetController | undefined;
+  private readonly dynamicLightingManager: DynamicLightingManager | undefined;
   private readonly config: SecureTrackingCoordinatorConfig;
   private unregisterHooks: Array<() => void> = [];
 
@@ -57,6 +60,7 @@ export class SecureTrackingSessionCoordinator {
     this.poiLayerManager = config.poiLayerManager;
     this.poiManager = config.poiManager;
     this.tacticalBottomSheet = config.tacticalBottomSheet;
+    this.dynamicLightingManager = config.dynamicLightingManager;
     this.config = config;
     this.setupIntegration();
   }
@@ -82,6 +86,11 @@ export class SecureTrackingSessionCoordinator {
     // 4. Register Tactical Bottom Sheet drain hook if provided
     if (this.tacticalBottomSheet) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.tacticalBottomSheet));
+    }
+
+    // 5. Register Dynamic Lighting Manager drain hook if provided
+    if (this.dynamicLightingManager) {
+      this.unregisterHooks.push(this.authBooth.registerDrainHook(this.dynamicLightingManager));
     }
   }
 
@@ -176,6 +185,10 @@ export class SecureTrackingSessionCoordinator {
 
   public getTacticalBottomSheet(): TacticalBottomSheetController | undefined {
     return this.tacticalBottomSheet;
+  }
+
+  public getDynamicLightingManager(): DynamicLightingManager | undefined {
+    return this.dynamicLightingManager;
   }
 
   /**

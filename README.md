@@ -130,9 +130,25 @@ Wysokowydajny szufladowy panel dolny (Bottom Sheet) w estetyce Cyberpunk HUD / D
 
 ---
 
-### 7. Integracja z Koordynatorem Sesji (`src/integration/`)
-- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
-  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`) oraz panel taktyczny (`drain`).
+### 7. Moduł Dynamicznego Światła Mapy — Księżyc vs Słońce (`src/lighting/`)
+Zaawansowany silnik symulacji astronomicznej i dynamicznego oświetlenia 3D dla MapLibre GL JS:
+- **Kalkulator Ciał Niebieskich (`CelestialCalculator`)**:
+  - Obliczenia Julian Date, wektorów deklinacji i rektascensji słońca i księżyca.
+  - Wyznaczanie kąta azymutu (0–360°), elewacji/wysokości nad horyzontem i kąta zenitu.
+  - Fazy dnia i nocy (`DayNightPhase`): `DAY`, `GOLDEN_HOUR_MORNING`, `CIVIL_DUSK`, `NAUTICAL_DUSK`, `ASTRONOMICAL_DUSK`, `NIGHT`.
+  - Faza i oświetlenie księżyca (`LunarEphemeris`): frakcja oświetlenia (0.0–1.0), wiek księżyca (0–29.53 dni) i nazwa fazy (`NEW_MOON`, `FULL_MOON`, itd.).
+- **Menedżer Dynamicznego Oświetlenia (`DynamicLightingManager`)**:
+  - Płynne przełączanie dominującego źródła światła (`SUN` vs `MOON`) z dynamiczną paletą barw (Złota Godzina, Południe, Srebrzysta Pełnia, Granatowy Nów).
+  - Automatyczna aktualizacja właściwości `setLight` na mapie MapLibre (kąty radialne, azymutalne i polarne).
+  - Synchronizacja cieniowania 3D terenu (`hillshade-illumination-direction`, `hillshade-shadow-color`) i budynków 3D (`fill-extrusion`).
+  - Pętla synchronizacji czasu rzeczywistego z opcjonalnym mnożnikiem przyspieszenia symulacji (`simulatedTimeMultiplier`).
+  - Pancerny drenaż sesji (`SessionDrainHook`): zatrzymanie timerów i reset przesunięcia czasu.
+
+---
+
+### 8. Integracja z Koordynatorem Sesji (`src/integration/`)
+- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
+  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`) oraz panel taktyczny (`drain`).
   - Wyświetlanie POI (`displayPois`) automatycznie respektuje uprawnienia aktywnej sesji.
 
 ---
@@ -148,8 +164,12 @@ lib/
 src/
 ├── components/
 │   └── TacticalBottomSheet.ts# Eksport komponentu TacticalBottomSheet
+├── lighting/
+│   ├── types.ts              # Typy oświetlenia dynamicznego (Solar/Lunar Ephemeris, Fazy, Paleta)
+│   ├── celestialCalculator.ts# Algorytmy pozycji Słońca i Księżyca (Julian Date, Azimuth, Altitude)
+│   └── dynamicLightingManager.ts # Menedżer światła MapLibre (Księżyc vs Słońce, Hillshade 3D, Cienie)
 ├── maplibre/
-│   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS, zdarzeń i opcji
+│   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS, oświetlenia 3D i zdarzeń
 │   ├── expressions.ts        # Helper wyrażeń stylów (feature-state, match, interpolate)
 │   ├── glowLayers.ts         # Warstwy neonowej poświaty (Złota Nitka + Punkty Radaru POI)
 │   ├── geoJsonAdapter.ts     # Lekki Adapter GeoJSON z cyklem życia i drenażem
@@ -180,7 +200,7 @@ src/
 │   ├── mobileTypes.ts        # Typy autoryzacji mobilnej i bootstrapu
 │   └── mobileGate.ts         # Śluza startowa mobilki (MobileAuthGate)
 ├── integration/
-│   └── coordinator.ts        # Koordynator sesji, tras, POI i UI (SecureTrackingSessionCoordinator)
+│   └── coordinator.ts        # Koordynator sesji, tras, POI, oświetlenia i UI
 └── index.ts                  # Główny punkt eksportu biblioteki
 ```
 
@@ -279,12 +299,32 @@ const hudHtml = sheetController.renderHtml();
 const component = TacticalBottomSheet({ controller: sheetController });
 ```
 
+### 4. Dynamiczne Oświetlenie Mapy (Słońce vs Księżyc, Fazy, 3D Hillshade)
+
+```typescript
+import { DynamicLightingManager, CelestialCalculator } from 'tracker';
+
+// Inicjalizacja menedżera światła powiązanego z mapą MapLibre
+const lightingManager = new DynamicLightingManager(mapInstance, {
+  observerCoordinate: [21.0122, 52.2297], // Warszawa
+  updateIntervalMs: 5000,                // Aktualizacja w czasie rzeczywistym
+  simulatedTimeMultiplier: 1.0,          // 1.0 = czas rzeczywisty (lub np. 3600 = 1h / sek)
+  onLightingChange: (state) => {
+    console.log(`Dominujące ciało: ${state.dominantBody} (${state.sun.phase})`);
+    console.log(`Księżyc: ${state.moon.phaseName}, oświetlenie: ${(state.moon.illuminatedFraction * 100).toFixed(1)}%`);
+  },
+});
+
+// Ręczne ustawienie godziny (np. pełnia nocy)
+lightingManager.advanceHours(12);
+```
+
 ---
 
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 116 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 125 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)
