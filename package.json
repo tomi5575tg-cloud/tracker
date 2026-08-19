@@ -2,8 +2,8 @@
   "name": "tracker",
   "version": "1.0.0",
   "description": "Pancerna implementacja Sluzy Logowania (Zasada Jednej Kabiny) oraz Drenazu Sesji (clearRoute) pod TypeScript, MapLibre GL JS i RFC 7946 GeoJSON",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

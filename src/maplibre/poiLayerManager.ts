@@ -18,6 +18,7 @@ export interface PoiLayerConfig {
   readonly enableClustering?: boolean | undefined;
   readonly clusterMaxZoom?: number | undefined;
   readonly clusterRadius?: number | undefined;
+  readonly enableNeonRadar?: boolean | undefined;
 }
 
 interface ResolvedPoiLayerConfig {
@@ -29,6 +30,7 @@ interface ResolvedPoiLayerConfig {
   readonly enableClustering: boolean;
   readonly clusterMaxZoom: number;
   readonly clusterRadius: number;
+  readonly enableNeonRadar: boolean;
 }
 
 export const DEFAULT_POI_LAYER_CONFIG: ResolvedPoiLayerConfig = {
@@ -40,6 +42,7 @@ export const DEFAULT_POI_LAYER_CONFIG: ResolvedPoiLayerConfig = {
   enableClustering: false,
   clusterMaxZoom: 14,
   clusterRadius: 50,
+  enableNeonRadar: false,
 };
 
 export class MapLibrePoiLayerManager implements SessionDrainHook {
@@ -60,6 +63,7 @@ export class MapLibrePoiLayerManager implements SessionDrainHook {
       enableClustering: config.enableClustering ?? DEFAULT_POI_LAYER_CONFIG.enableClustering,
       clusterMaxZoom: config.clusterMaxZoom ?? DEFAULT_POI_LAYER_CONFIG.clusterMaxZoom,
       clusterRadius: config.clusterRadius ?? DEFAULT_POI_LAYER_CONFIG.clusterRadius,
+      enableNeonRadar: config.enableNeonRadar ?? DEFAULT_POI_LAYER_CONFIG.enableNeonRadar,
     };
 
     this.ensureLayersInitialized();

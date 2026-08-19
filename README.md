@@ -14,7 +14,24 @@ Pancerna, modularna implementacja architektury bezpieczeństwa sesji, wizualizac
 
 ## Główne Moduły i Koncepcje
 
-### 1. Lekki Adapter GeoJSON dla Silnika MapLibre GL JS (`src/maplibre/geoJsonAdapter.ts` & `src/maplibre/expressions.ts`)
+### 1. Neonowa Poświata na Mapie (Złota Nitka + Punkty Radaru POI — `lib/mapGlowLayers.ts` & `src/maplibre/glowLayers.ts`)
+Wielowarstwowy system efektów świetlnych optymalizowany pod kątem renderowania na GPU w MapLibre GL JS:
+- **Złota Nitka Trasy (`createGoldenThreadLayers`)**:
+  - **Outer Amber Glow**: Rozmyta, szeroka poświata zewnętrzna z dynamicznym `line-blur` interpolowanym wraz z zoomem.
+  - **Mid Gold Radiant**: Nasycona, półprzezroczysta złota linia pośrednia (`#FFD700`).
+  - **Core White-Gold Thread**: Wyrazista, ostra nitka centralna (`#FFF8E7`) o maksymalnym kontraście.
+- **Punkty Radaru POI (`createPoiRadarLayers`)**:
+  - **Outer Radar Wave**: Pulsująca fala skanowania radaru z rozmyciem `circle-blur` i reakcją na stan `hover` (`feature-state`).
+  - **Mid Halo Ring**: Zewnętrzny pierścień z białym obrysem i adaptacyjnym promieniem.
+  - **Core Circle**: Centralny neonowy punkt w barwie kategorii / statusu POI.
+  - **Center Hotspot**: Biały punkt skupienia o wysokiej jasności.
+  - **Neon Glow Symbols**: Etykiety tekstowe z ciemnym halo (`#0B0F19`) dla doskonałej czytelności w trybie nocnym / dark theme.
+- **Aplikacja i Bezpieczne Usuwanie (`applyNeonGlowLayers`)**:
+  - Funkcja pomocnicza rejestrująca komplet warstw z obsługą zdarzenia `load` mapy oraz funkcją `removeGlowLayers()` do natychmiastowego demontażu.
+
+---
+
+### 2. Lekki Adapter GeoJSON dla Silnika MapLibre GL JS (`src/maplibre/geoJsonAdapter.ts` & `src/maplibre/expressions.ts`)
 Wysokowydajny, modularny adapter integrujący dane GeoJSON ze stylem i silnikiem MapLibre GL JS:
 - **Zarządzanie Źródłem i Warstwami (`MapLibreGeoJsonAdapter`)**:
   - Automatyczna rejestracja źródła GeoJSON i warstw (`circle`, `symbol`, `line`, `fill`, `heatmap`, `fill-extrusion`) z obsługą dynamicznego ładowania i przeładowywania stylów mapy (`style.load`).
@@ -107,10 +124,13 @@ Zaawansowany silnik kontroli dostępu (RBAC z elementami ABAC) integrujący się
 ## Architektura Modułów
 
 ```
+lib/
+└── mapGlowLayers.ts          # Neonowa Poświata na Mapie (Złota Nitka + Punkty Radaru POI)
 src/
 ├── maplibre/
 │   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS, zdarzeń i opcji
 │   ├── expressions.ts        # Helper wyrażeń stylów (feature-state, match, interpolate)
+│   ├── glowLayers.ts         # Warstwy neonowej poświaty (Złota Nitka + Punkty Radaru POI)
 │   ├── geoJsonAdapter.ts     # Lekki Adapter GeoJSON z cyklem życia i drenażem
 │   ├── routeManager.ts       # Zarządzanie trasami i procedura clearRoute
 │   └── poiLayerManager.ts    # Zarządzanie warstwami POI i procedura clearPoi
@@ -147,7 +167,23 @@ src/
 
 ## Przykładowe Użycie
 
-### 1. Użycie Lekkiego Adaptera GeoJSON dla MapLibre GL JS
+### 1. Zastosowanie Neonowej Poświaty (Złota Nitka + Radar POI)
+
+```typescript
+import { applyNeonGlowLayers, NEON_GLOW_THEME } from 'tracker';
+// lub bezpośrednio: import { createGoldenThreadLayers, createPoiRadarLayers } from './lib/mapGlowLayers.js';
+
+// Rejestracja kompletnego zestawu warstw świetlnych na mapie
+const { goldenThreadLayerIds, poiRadarLayerIds, removeGlowLayers } = applyNeonGlowLayers(mapInstance, {
+  routeSourceId: 'tracker-route-source',
+  poiSourceId: 'tracker-poi-source',
+});
+
+// Natychmiastowe usunięcie warstw poświaty przy zmianie widoku
+// removeGlowLayers();
+```
+
+### 2. Użycie Lekkiego Adaptera GeoJSON dla MapLibre GL JS
 
 ```typescript
 import { MapLibreGeoJsonAdapter, MapLibreExpressions } from 'tracker';
@@ -200,7 +236,7 @@ console.log('PostGIS SQL:', radiusQuery.postGis.sql);
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 102 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 107 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)

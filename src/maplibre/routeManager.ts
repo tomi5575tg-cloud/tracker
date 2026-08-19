@@ -15,6 +15,7 @@ export interface MapRouteLayerConfig {
   readonly routeLineCasingLayerId?: string | undefined;
   readonly waypointsSymbolLayerId?: string | undefined;
   readonly waypointsCircleLayerId?: string | undefined;
+  readonly enableGoldenThreadGlow?: boolean | undefined;
 }
 
 export const DEFAULT_ROUTE_LAYER_CONFIG: MapRouteLayerConfig = {
@@ -24,6 +25,7 @@ export const DEFAULT_ROUTE_LAYER_CONFIG: MapRouteLayerConfig = {
   routeLineCasingLayerId: 'tracker-route-line-casing-layer',
   waypointsCircleLayerId: 'tracker-waypoints-circle-layer',
   waypointsSymbolLayerId: 'tracker-waypoints-symbol-layer',
+  enableGoldenThreadGlow: false,
 };
 
 export interface ClearRouteOptions {
