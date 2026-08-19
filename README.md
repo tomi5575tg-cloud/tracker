@@ -114,12 +114,18 @@ Zaawansowany silnik kontroli dostępu (RBAC z elementami ABAC) integrujący się
 
 ---
 
-### 6. Taktyczny Panel Dolny (`components/TacticalBottomSheet.ts` & `src/components/`)
-Wysokowydajny kontroler i komponent panelu dolnego (Bottom Sheet) w estetyce Cyberpunk/Dark Obsidian:
+### 6. Szufladowy Kokpit z Poświatą HUD — Tailwind CSS (`components/TacticalBottomSheet.tsx` & `.ts`)
+Wysokowydajny szufladowy panel dolny (Bottom Sheet) w estetyce Cyberpunk HUD / Dark Obsidian z poświatą neonową:
+- **Mapowanie Klas Tailwind CSS (`TACTICAL_HUD_TAILWIND_CLASSES`)**:
+  - `container`: `fixed inset-x-0 bottom-0 z-50 flex flex-col bg-slate-950/95 text-slate-100 backdrop-blur-xl border-t border-cyan-500/30 shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_-2px_15px_rgba(0,240,255,0.2)] rounded-t-3xl`
+  - `grabberBar`: `w-12 h-1.5 rounded-full bg-slate-600/60 shadow-[0_0_8px_rgba(0,240,255,0.4)]`
+  - `tabItemActive`: `text-cyan-400 border-b-2 border-cyan-400 shadow-[0_2px_8px_rgba(0,240,255,0.3)]`
+  - `card`: `bg-slate-900/80 border border-cyan-500/20 hover:border-cyan-400/40`
+  - `actionButtonPrimary`: `bg-gradient-to-r from-cyan-500 to-blue-600 shadow-[0_0_20px_rgba(0,240,255,0.4)]`
 - **Snap Points (`TacticalSnapPoint`)**: `HIDDEN` (0 px), `PEEK` (84 px), `HALF` (45% wysokości ekranu), `EXPANDED` (88% wysokości ekranu).
 - **Gestury i Magnetyzm**: Płynne przeciąganie (`handleDragStart`, `handleDragMove`, `handleDragEnd`) z asystą prędkości (velocity fling) i zatrzaskiwaniem do najbliższego punktu.
 - **Zakładki Taktyczne (`TacticalSheetTab`)**: `RADAR_POI` (inspektor wybranego punktu), `TELEMETRY_ROUTE` (telemetria trasy), `ACTIONS` (operacje taktyczne).
-- **Stylizacja i View-Model**: Generowanie stylów kontenera z neonową ramką (`borderTop: 1px solid rgba(0, 240, 255, 0.3)`), cieniem poświaty i uchwytem `grabber`.
+- **Generator Widoku HTML i Komponent JSX**: Metoda `renderHtml()` oraz fabryka funkcyjna `TacticalBottomSheet(props)` do natychmiastowej integracji w React / Next.js / PWA / React Native Web.
 - **Pancerny Drenaż Sesji (`SessionDrainHook`)**: Przy wylogowaniu lub zmianie użytkownika w śluzie stan jest bezwzględnie czyszczony, wybrane punkty/trasy usuwane, a panel chowany do stanu `HIDDEN`.
 
 ---
@@ -135,7 +141,8 @@ Wysokowydajny kontroler i komponent panelu dolnego (Bottom Sheet) w estetyce Cyb
 
 ```
 components/
-└── TacticalBottomSheet.ts    # Taktyczny Panel Dolny (Snap Points, Gestury, Dark/Neon Theme)
+├── TacticalBottomSheet.tsx   # Szufladowy Kokpit HUD (Komponent JSX, Tailwind CSS, Poświata)
+└── TacticalBottomSheet.ts    # Kontroler Taktycznego Panelu (Snap Points, Gestury, Drenaż)
 lib/
 └── mapGlowLayers.ts          # Neonowa Poświata na Mapie (Złota Nitka + Punkty Radaru POI)
 src/
@@ -245,12 +252,16 @@ console.log('PostGIS SQL:', radiusQuery.postGis.sql);
 // -> ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
 ```
 
-### 3. Sterowanie Taktycznym Panelem Dolnym (Tactical Bottom Sheet)
+### 3. Sterowanie Taktycznym Panelem Dolnym z Poświatą HUD (Tailwind CSS)
 
 ```typescript
-import { TacticalBottomSheetController } from 'tracker';
-// lub import { TacticalBottomSheetController } from './components/TacticalBottomSheet.js';
+import {
+  TacticalBottomSheetController,
+  TacticalBottomSheet,
+  TACTICAL_HUD_TAILWIND_CLASSES,
+} from 'tracker';
 
+// 1. Inicjalizacja kontrolera
 const sheetController = new TacticalBottomSheetController({
   initialSnapPoint: 'PEEK',
   neonThemeAccent: '#00F0FF',
@@ -262,6 +273,10 @@ sheetController.selectPoi(selectedPoi, poiCategory);
 
 // Zmiana wysokości (PEEK -> HALF -> EXPANDED)
 sheetController.setSnapPoint('HALF');
+
+// 2. Wygenerowanie gotowego szablonu HTML HUD lub użycie komponentu React/JSX
+const hudHtml = sheetController.renderHtml();
+const component = TacticalBottomSheet({ controller: sheetController });
 ```
 
 ---
@@ -269,7 +284,7 @@ sheetController.setSnapPoint('HALF');
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 114 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 116 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)

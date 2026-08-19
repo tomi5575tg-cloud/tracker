@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   TacticalBottomSheetController,
+  TACTICAL_HUD_TAILWIND_CLASSES,
+  TacticalBottomSheet,
   type TacticalSnapPoint,
 } from '../../components/TacticalBottomSheet.js';
 import type { PoiItem, PoiCategory } from '../../src/poi/types.js';
@@ -123,15 +125,40 @@ describe('TacticalBottomSheetController (Components / Tactical UI)', () => {
     expect(sheet.getState().snapPoint).toBe('HALF');
   });
 
-  it('should generate CSS container and handle styles with neon accents', () => {
+  it('should generate Tailwind CSS mapping and container styles with HUD poświata', () => {
     const sheet = new TacticalBottomSheetController();
     const containerStyles = sheet.getContainerStyles();
     const handleStyles = sheet.getHandleStyles();
+    const tailwindClasses = sheet.getTailwindClasses();
 
-    expect(containerStyles.position).toBe('absolute');
-    expect(containerStyles.backgroundColor).toBe('#0B0F19');
+    expect(containerStyles.position).toBe('fixed');
     expect(containerStyles.borderTop).toContain('rgba(0, 240, 255');
     expect(handleStyles.cursor).toBe('grab');
+    expect(tailwindClasses.container).toContain('bg-slate-950');
+    expect(tailwindClasses.container).toContain('border-cyan-500/30');
+    expect(tailwindClasses.grabberBar).toContain('shadow-[0_0_8px_rgba(0,240,255,0.4)]');
+  });
+
+  it('should render HTML template string for HUD cockpit', () => {
+    const sheet = new TacticalBottomSheetController();
+    sheet.selectPoi(samplePoi, sampleCategory);
+
+    const html = sheet.renderHtml();
+    expect(html).toContain('Cyber Station Alpha');
+    expect(html).toContain('Orlen Cyber');
+    expect(html).toContain('Współrzędne GPS');
+    expect(html).toContain('Radar POI');
+  });
+
+  it('should support TacticalBottomSheet JSX factory function', () => {
+    const component = TacticalBottomSheet({
+      selectedPoi: samplePoi,
+      selectedPoiCategory: sampleCategory,
+    });
+
+    expect(component.controller).toBeInstanceOf(TacticalBottomSheetController);
+    expect(component.classes.container).toBe(TACTICAL_HUD_TAILWIND_CLASSES.container);
+    expect(component.renderHtml()).toContain('Cyber Station Alpha');
   });
 
   it('should execute Session Drain and wipe state on user switch/drain', () => {
