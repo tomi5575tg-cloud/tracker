@@ -41,6 +41,7 @@ export * from './spatial/spatialIndex.js';
 
 // Tactical UI Components
 export * from './components/TacticalBottomSheet.js';
+export * from './components/TacticalMapCockpit.js';
 
 // Dynamic Lighting Module (Księżyc vs Słońce)
 export * from './lighting/types.js';

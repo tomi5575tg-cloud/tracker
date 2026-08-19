@@ -158,12 +158,15 @@ Zaawansowany silnik symulacji astronomicznej i dynamicznego oświetlenia 3D dla 
 
 ```
 components/
+├── TacticalMapCockpit.tsx    # Główny Widok Kokpitu (React + MapLibre, Top Bar, Floating Actions)
+├── TacticalMapCockpit.ts     # Kontroler Kokpitu (Orkiestracja Mapy, Śluzy, Oświetlenia i UI)
 ├── TacticalBottomSheet.tsx   # Szufladowy Kokpit HUD (Komponent JSX, Tailwind CSS, Poświata)
 └── TacticalBottomSheet.ts    # Kontroler Taktycznego Panelu (Snap Points, Gestury, Drenaż)
 lib/
 └── mapGlowLayers.ts          # Neonowa Poświata na Mapie (Złota Nitka + Punkty Radaru POI)
 src/
 ├── components/
+│   ├── TacticalMapCockpit.ts # Eksport komponentu TacticalMapCockpit
 │   └── TacticalBottomSheet.ts# Eksport komponentu TacticalBottomSheet
 ├── lighting/
 │   ├── types.ts              # Typy oświetlenia dynamicznego (Solar/Lunar Ephemeris, Fazy, Paleta)
@@ -336,12 +339,37 @@ coordinator.onItemSelect('poi-radar-station', {
 });
 ```
 
+### 6. Główny Widok Kokpitu (React + MapLibre + Tactical HUD)
+
+```typescript
+import {
+  TacticalMapCockpit,
+  TacticalMapCockpitController,
+  TACTICAL_COCKPIT_TAILWIND_CLASSES,
+} from 'tracker';
+
+// Inicjalizacja głównego widoku kokpitu
+const cockpit = TacticalMapCockpit({
+  map: mapInstance,
+  authBooth: authLockBooth,
+  initialCenter: [21.0122, 52.2297], // Warszawa
+  enableNeonGlow: true,
+  onItemSelect: (poi) => console.log('Wybrano punkt:', poi?.name),
+});
+
+// Skan radarowy w promieniu 15 km
+cockpit.controller.performRadarScan(15000);
+
+// Przełączanie oświetlenia noc / dzień
+cockpit.controller.toggleDayNight(12);
+```
+
 ---
 
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 129 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 136 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)
