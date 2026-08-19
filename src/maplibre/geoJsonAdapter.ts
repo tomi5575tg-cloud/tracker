@@ -277,12 +277,69 @@ export class MapLibreGeoJsonAdapter<G extends Geometry = Geometry, P = Record<st
   }
 
   /**
+   * Selects an item programmatically or responds to onItemSelect event,
+   * optionally centering the camera and setting feature-state
+   */
+  public selectItem(
+    feature: Feature<G, P> | string | number | null,
+    selectionOptions: import('./types.js').MapLibreItemSelectionOptions = {}
+  ): void {
+    const {
+      centerCamera = false,
+      zoom,
+      updateFeatureState = true,
+      easeDurationMs = 800,
+    } = selectionOptions;
+
+    let targetFeature: Feature<G, P> | null = null;
+    let targetId: string | number | null = null;
+
+    if (feature !== null && typeof feature === 'object' && 'geometry' in feature) {
+      targetFeature = feature;
+      targetId = feature.id ?? null;
+    } else if (typeof feature === 'string' || typeof feature === 'number') {
+      targetId = feature;
+      targetFeature = this.currentData.features.find((f) => f.id === targetId) ?? null;
+    }
+
+    if (updateFeatureState) {
+      this.setSelectedFeature(targetId);
+    }
+
+    if (centerCamera && targetFeature && targetFeature.geometry) {
+      let centerCoord: Position | null = null;
+      if (targetFeature.geometry.type === 'Point') {
+        centerCoord = targetFeature.geometry.coordinates;
+      }
+
+      if (centerCoord && (this.map.easeTo || this.map.flyTo || this.map.jumpTo)) {
+        const camOptions = {
+          center: [centerCoord[0], centerCoord[1]] as [number, number],
+          ...(zoom !== undefined ? { zoom } : {}),
+          duration: easeDurationMs,
+        };
+
+        if (this.map.easeTo) {
+          this.map.easeTo(camOptions);
+        } else if (this.map.flyTo) {
+          this.map.flyTo(camOptions);
+        } else if (this.map.jumpTo) {
+          this.map.jumpTo(camOptions);
+        }
+      }
+    }
+
+    this.options.onItemSelect?.(targetFeature as any);
+  }
+
+  /**
    * Registers click event handler on a specific layer
    */
   public onFeatureClick(layerId: string, handler: FeatureEventHandler<G, P>): () => void {
     const listener = (e: MapLibreLayerEvent<any>) => {
       if (e.features && e.features.length > 0) {
         const feature = e.features[0] as Feature<G, P>;
+        this.selectItem(feature);
         handler(feature, e);
       }
     };

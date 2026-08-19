@@ -13,6 +13,7 @@ export interface TacticalBottomSheetProps extends TacticalBottomSheetOptions {
   readonly selectedPoi?: PoiItem | null;
   readonly selectedPoiCategory?: PoiCategory | null;
   readonly activeRoute?: RouteData | null;
+  readonly onItemSelect?: (item: PoiItem | null) => void;
   readonly onNavigateClick?: () => void;
   readonly onScanRadiusClick?: () => void;
   readonly onDrainClick?: () => void;

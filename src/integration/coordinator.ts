@@ -192,6 +192,48 @@ export class SecureTrackingSessionCoordinator {
   }
 
   /**
+   * Dispatches unified onItemSelect across POI layer manager, tactical bottom sheet and map view.
+   * Ensures bidirectional synchronization when a user clicks a marker on the map or picks an item in the UI.
+   */
+  public selectPoi(
+    poi: PoiItem | string | null,
+    options: import('../maplibre/types.js').MapLibreItemSelectionOptions = {}
+  ): void {
+    let resolvedPoi: PoiItem | null = null;
+    let resolvedCategory: import('../poi/types.js').PoiCategory | null = null;
+
+    if (poi !== null && typeof poi === 'object') {
+      resolvedPoi = poi;
+    } else if (typeof poi === 'string') {
+      resolvedPoi = this.poiManager?.getPoi(poi, this.getSession() ?? undefined) ?? null;
+    }
+
+    if (resolvedPoi && this.poiManager) {
+      resolvedCategory = this.poiManager.getCategoryRegistry().getCategory(resolvedPoi.categoryId) ?? null;
+    }
+
+    // 1. Update Map POI Layer selection and camera
+    if (this.poiLayerManager) {
+      this.poiLayerManager.selectPoi(resolvedPoi, options);
+    }
+
+    // 2. Update Tactical Bottom Sheet Inspector
+    if (this.tacticalBottomSheet) {
+      this.tacticalBottomSheet.selectPoi(resolvedPoi, resolvedCategory);
+    }
+  }
+
+  /**
+   * Alias for selectPoi providing standard onItemSelect signature
+   */
+  public onItemSelect(
+    poi: PoiItem | string | null,
+    options: import('../maplibre/types.js').MapLibreItemSelectionOptions = {}
+  ): void {
+    this.selectPoi(poi, options);
+  }
+
+  /**
    * Cleanup and destroy coordinator
    */
   public destroy(): void {

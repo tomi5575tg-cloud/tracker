@@ -163,4 +163,15 @@ export interface MapLibreAdapterOptions {
   readonly hoverCursor?: string | undefined;
   readonly autoFitBounds?: boolean | undefined;
   readonly fitBoundsOptions?: FitBoundsOptions | undefined;
+  readonly onItemSelect?: ((feature: Feature<Geometry, Record<string, unknown>> | null, event?: MapLibreLayerEvent<any>) => void) | undefined;
 }
+
+export interface MapLibreItemSelectionOptions {
+  readonly centerCamera?: boolean | undefined;
+  readonly zoom?: number | undefined;
+  readonly showPopup?: boolean | undefined;
+  readonly popupHtml?: string | undefined;
+  readonly easeDurationMs?: number | undefined;
+  readonly updateFeatureState?: boolean | undefined;
+}
+

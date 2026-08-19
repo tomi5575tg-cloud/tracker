@@ -42,6 +42,7 @@ export interface TacticalBottomSheetOptions {
   readonly onSnapChange?: ((snapPoint: TacticalSnapPoint) => void) | undefined;
   readonly onTabChange?: ((tab: TacticalSheetTab) => void) | undefined;
   readonly onPoiSelected?: ((poi: PoiItem | null) => void) | undefined;
+  readonly onItemSelect?: ((poi: PoiItem | null) => void) | undefined;
   readonly onDrained?: ((reason: string) => void) | undefined;
 }
 
@@ -174,12 +175,13 @@ export class TacticalBottomSheetController implements SessionDrainHook {
   /**
    * Inspects a selected POI item and category
    */
-  public selectPoi(poi: PoiItem | null, category: PoiCategory | null = null): void {
-    const nextSnap: TacticalSnapPoint = poi
-      ? this.state.snapPoint === 'HIDDEN'
-        ? 'HALF'
-        : this.state.snapPoint
-      : this.state.snapPoint;
+  public selectPoi(poi: PoiItem | null, category: PoiCategory | null = null, forceExpand = false): void {
+    let nextSnap: TacticalSnapPoint = this.state.snapPoint;
+    if (poi) {
+      if (this.state.snapPoint === 'HIDDEN' || this.state.snapPoint === 'PEEK' || forceExpand) {
+        nextSnap = 'HALF';
+      }
+    }
     const nextHeight = this.calculateHeightForSnap(nextSnap, this.getViewportHeight());
 
     this.updateState({
@@ -192,6 +194,14 @@ export class TacticalBottomSheetController implements SessionDrainHook {
     });
 
     this.options.onPoiSelected?.(poi);
+    this.options.onItemSelect?.(poi);
+  }
+
+  /**
+   * Alias for selectPoi providing unified onItemSelect interface
+   */
+  public onItemSelect(poi: PoiItem | null, category: PoiCategory | null = null, forceExpand = false): void {
+    this.selectPoi(poi, category, forceExpand);
   }
 
   /**

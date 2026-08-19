@@ -19,6 +19,7 @@ export interface PoiLayerConfig {
   readonly clusterMaxZoom?: number | undefined;
   readonly clusterRadius?: number | undefined;
   readonly enableNeonRadar?: boolean | undefined;
+  readonly onItemSelect?: ((poi: PoiItem | null) => void) | undefined;
 }
 
 interface ResolvedPoiLayerConfig {
@@ -31,6 +32,7 @@ interface ResolvedPoiLayerConfig {
   readonly clusterMaxZoom: number;
   readonly clusterRadius: number;
   readonly enableNeonRadar: boolean;
+  readonly onItemSelect?: ((poi: PoiItem | null) => void) | undefined;
 }
 
 export const DEFAULT_POI_LAYER_CONFIG: ResolvedPoiLayerConfig = {
@@ -52,6 +54,9 @@ export class MapLibrePoiLayerManager implements SessionDrainHook {
   private readonly popups = new Set<MapLibrePopup>();
   private initialized = false;
 
+  private currentPois: readonly PoiItem[] = [];
+  private selectedPoiId: string | null = null;
+
   constructor(map: MapLibreMapInstance, config: PoiLayerConfig = {}) {
     this.map = map;
     this.config = {
@@ -64,6 +69,7 @@ export class MapLibrePoiLayerManager implements SessionDrainHook {
       clusterMaxZoom: config.clusterMaxZoom ?? DEFAULT_POI_LAYER_CONFIG.clusterMaxZoom,
       clusterRadius: config.clusterRadius ?? DEFAULT_POI_LAYER_CONFIG.clusterRadius,
       enableNeonRadar: config.enableNeonRadar ?? DEFAULT_POI_LAYER_CONFIG.enableNeonRadar,
+      onItemSelect: config.onItemSelect,
     };
 
     this.ensureLayersInitialized();
@@ -144,14 +150,100 @@ export class MapLibrePoiLayerManager implements SessionDrainHook {
    * Sets POI items directly, converting them with category styling and permissions.
    */
   public setPoiItems(pois: readonly PoiItem[], options: PoiToGeoJsonOptions = {}): void {
+    this.currentPois = pois;
     const featureCollection = PoiGeoJsonConverter.toFeatureCollection(pois, options);
     this.setPoiGeoJson(featureCollection);
+  }
+
+  /**
+   * Selects a POI item by object or ID, centers the camera, sets GPU feature-state,
+   * and dispatches onItemSelect callback.
+   */
+  public selectPoi(
+    poi: PoiItem | string | null,
+    options: import('./types.js').MapLibreItemSelectionOptions = {}
+  ): void {
+    const {
+      centerCamera = false,
+      zoom,
+      easeDurationMs = 800,
+    } = options;
+
+    let targetPoi: PoiItem | null = null;
+    let targetId: string | null = null;
+
+    if (poi !== null && typeof poi === 'object' && 'coordinate' in poi) {
+      targetPoi = poi;
+      targetId = poi.id;
+    } else if (typeof poi === 'string') {
+      targetId = poi;
+      targetPoi = this.currentPois.find((p) => p.id === targetId) ?? null;
+    }
+
+    if (this.selectedPoiId !== null && this.selectedPoiId !== targetId) {
+      this.setFeatureState(this.selectedPoiId, { selected: false });
+    }
+
+    if (targetId !== null) {
+      this.setFeatureState(targetId, { selected: true });
+    }
+
+    this.selectedPoiId = targetId;
+
+    if (centerCamera && targetPoi) {
+      const coord = targetPoi.coordinate;
+      if (this.map.easeTo || this.map.flyTo || this.map.jumpTo) {
+        const camOptions = {
+          center: [coord[0], coord[1]] as [number, number],
+          ...(zoom !== undefined ? { zoom } : {}),
+          duration: easeDurationMs,
+        };
+
+        if (this.map.easeTo) {
+          this.map.easeTo(camOptions);
+        } else if (this.map.flyTo) {
+          this.map.flyTo(camOptions);
+        } else if (this.map.jumpTo) {
+          this.map.jumpTo(camOptions);
+        }
+      }
+    }
+
+    this.config.onItemSelect?.(targetPoi);
+  }
+
+  /**
+   * Alias for selectPoi providing unified onItemSelect interface
+   */
+  public onItemSelect(
+    poi: PoiItem | string | null,
+    options: import('./types.js').MapLibreItemSelectionOptions = {}
+  ): void {
+    this.selectPoi(poi, options);
+  }
+
+  /**
+   * Updates feature state on MapLibre GPU instance
+   */
+  public setFeatureState(featureId: string | number, state: Record<string, unknown>): void {
+    if (this.map.setFeatureState) {
+      this.map.setFeatureState(
+        {
+          source: this.config.sourceId,
+          id: featureId,
+        },
+        state
+      );
+    }
   }
 
   /**
    * PANIC/DRAIN: Completely clears all POI layers, markers, and popups.
    */
   public clearPoi(): void {
+    this.currentPois = [];
+    this.selectedPoiId = null;
+
     // 1. Reset source to empty RFC 7946 FeatureCollection
     const source = this.map.getSource(this.config.sourceId);
     if (source) {

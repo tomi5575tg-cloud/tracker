@@ -37,8 +37,9 @@ Wysokowydajny, modularny adapter integrujący dane GeoJSON ze stylem i silnikiem
   - Automatyczna rejestracja źródła GeoJSON i warstw (`circle`, `symbol`, `line`, `fill`, `heatmap`, `fill-extrusion`) z obsługą dynamicznego ładowania i przeładowywania stylów mapy (`style.load`).
   - Optymalizacja transferu danych: bezpośrednia aktualizacja przez `setData()` lub buforowana / odroczona przez `setDataDebounced(data, delayMs)` dla szybkiego strumieniowania telemetrii GPS.
   - Automatyczne dopasowanie kamery do granic danych (`autoFitBounds`, `fitToData()`).
-- **Interaktywność i Zarządzanie Stanem (`feature-state`)**:
-  - `setHoveredFeature(id)` / `setSelectedFeature(id)`: automatyczne przełączanie stanów `hover` i `selected` w silniku GPU MapLibre.
+- **Interaktywność, Zdarzenie `onItemSelect` i Zarządzanie Stanem (`feature-state`)**:
+  - `selectItem(feature, options)`: programowa lub sterowana zdarzeniem selekcja punktu/linii z centrowaniem kamery (`easeTo`, `flyTo`) i podświetleniem w silniku GPU MapLibre.
+  - `setHoveredFeature(id)` / `setSelectedFeature(id)`: automatyczne przełączanie stanów `hover` i `selected` w GPU.
   - `changeCursorOnHover`: automatyczna zmiana kursora myszy (`pointer`, `crosshair`).
   - Rejestracja zdarzeń: `onFeatureClick(layerId, handler)` oraz `onFeatureHover(layerId, handler)`.
 - **Pomocnik Wyrażeń MapLibre (`MapLibreExpressions`)**:
@@ -48,7 +49,7 @@ Wysokowydajny, modularny adapter integrujący dane GeoJSON ze stylem i silnikiem
 
 ---
 
-### 2. Generator Zapytań Przestrzennych (`SpatialQueryGenerator` & `GeoSpatialUtils`)
+### 3. Generator Zapytań Przestrzennych (`SpatialQueryGenerator` & `GeoSpatialUtils`)
 Moduł geodezyjny i generator zapytań przestrzennych (`src/spatial/`):
 - **Wzory Geodezyjne i Matematyka Przestrzenna (`GeoSpatialUtils`)**:
   - `haversineDistance(coordA, coordB)`: Precyzyjna odległość ortodromiczna w metrach (Great-Circle Distance) na elipsoidzie WGS84.
@@ -71,7 +72,7 @@ Moduł geodezyjny i generator zapytań przestrzennych (`src/spatial/`):
 
 ---
 
-### 3. Indeks Przestrzenny i Wyszukiwanie POI (`SpatialPoiIndex` & `PoiManager`)
+### 4. Indeks Przestrzenny i Wyszukiwanie POI (`SpatialPoiIndex` & `PoiManager`)
 - Wbudowany in-memory indeks przestrzenny zintegrowany z silnikiem kontroli dostępu RBAC/ABAC:
   - `searchBBox(bbox, options)`
   - `searchRadius(center, radiusMeters, options)`
@@ -82,7 +83,7 @@ Moduł geodezyjny i generator zapytań przestrzennych (`src/spatial/`):
 
 ---
 
-### 4. Kontrakt Kategorii POI (`src/poi/`)
+### 5. Kontrakt Kategorii POI (`src/poi/`)
 Zapewnia ustrukturyzowany, zwalidowany schemat danych dla punktów zainteresowania (POI) w systemie:
 - **Hierarchia i Klasyfikacja**:
   - `classification`: `'SYSTEM'` (wbudowane kategorie bazowe) vs `'CUSTOM'` (tworzone przez organizację/użytkownika).
@@ -319,12 +320,28 @@ const lightingManager = new DynamicLightingManager(mapInstance, {
 lightingManager.advanceHours(12);
 ```
 
+### 5. Dwukierunkowe Spięcie Zdarzenia `onItemSelect` z MapLibre GL JS
+
+```typescript
+import {
+  SecureTrackingSessionCoordinator,
+  MapLibrePoiLayerManager,
+  TacticalBottomSheetController,
+} from 'tracker';
+
+// Kliknięcie w punkt na mapie lub wybór z panelu synchronizuje stan i widok:
+coordinator.onItemSelect('poi-radar-station', {
+  centerCamera: true, // Automatyczne przesunięcie kamery (easeTo/flyTo)
+  zoom: 15,           // Zbliżenie na wybrany obiekt
+});
+```
+
 ---
 
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 125 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 129 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)
