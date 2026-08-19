@@ -39,5 +39,8 @@ export * from './spatial/geoUtils.js';
 export * from './spatial/queryGenerator.js';
 export * from './spatial/spatialIndex.js';
 
+// Tactical UI Components
+export * from './components/TacticalBottomSheet.js';
+
 // Integration Coordinator
 export * from './integration/coordinator.js';

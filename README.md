@@ -114,9 +114,19 @@ Zaawansowany silnik kontroli dostępu (RBAC z elementami ABAC) integrujący się
 
 ---
 
-### 6. Integracja z Koordynatorem Sesji (`src/integration/`)
-- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager` oraz `PoiManager` w spójny ekosystem bezpieczeństwa:
-  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje zarówno trasę (`clearRoute`), jak i punkty POI (`clearPoi`).
+### 6. Taktyczny Panel Dolny (`components/TacticalBottomSheet.ts` & `src/components/`)
+Wysokowydajny kontroler i komponent panelu dolnego (Bottom Sheet) w estetyce Cyberpunk/Dark Obsidian:
+- **Snap Points (`TacticalSnapPoint`)**: `HIDDEN` (0 px), `PEEK` (84 px), `HALF` (45% wysokości ekranu), `EXPANDED` (88% wysokości ekranu).
+- **Gestury i Magnetyzm**: Płynne przeciąganie (`handleDragStart`, `handleDragMove`, `handleDragEnd`) z asystą prędkości (velocity fling) i zatrzaskiwaniem do najbliższego punktu.
+- **Zakładki Taktyczne (`TacticalSheetTab`)**: `RADAR_POI` (inspektor wybranego punktu), `TELEMETRY_ROUTE` (telemetria trasy), `ACTIONS` (operacje taktyczne).
+- **Stylizacja i View-Model**: Generowanie stylów kontenera z neonową ramką (`borderTop: 1px solid rgba(0, 240, 255, 0.3)`), cieniem poświaty i uchwytem `grabber`.
+- **Pancerny Drenaż Sesji (`SessionDrainHook`)**: Przy wylogowaniu lub zmianie użytkownika w śluzie stan jest bezwzględnie czyszczony, wybrane punkty/trasy usuwane, a panel chowany do stanu `HIDDEN`.
+
+---
+
+### 7. Integracja z Koordynatorem Sesji (`src/integration/`)
+- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
+  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`) oraz panel taktyczny (`drain`).
   - Wyświetlanie POI (`displayPois`) automatycznie respektuje uprawnienia aktywnej sesji.
 
 ---
@@ -124,9 +134,13 @@ Zaawansowany silnik kontroli dostępu (RBAC z elementami ABAC) integrujący się
 ## Architektura Modułów
 
 ```
+components/
+└── TacticalBottomSheet.ts    # Taktyczny Panel Dolny (Snap Points, Gestury, Dark/Neon Theme)
 lib/
 └── mapGlowLayers.ts          # Neonowa Poświata na Mapie (Złota Nitka + Punkty Radaru POI)
 src/
+├── components/
+│   └── TacticalBottomSheet.ts# Eksport komponentu TacticalBottomSheet
 ├── maplibre/
 │   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS, zdarzeń i opcji
 │   ├── expressions.ts        # Helper wyrażeń stylów (feature-state, match, interpolate)
@@ -159,7 +173,7 @@ src/
 │   ├── mobileTypes.ts        # Typy autoryzacji mobilnej i bootstrapu
 │   └── mobileGate.ts         # Śluza startowa mobilki (MobileAuthGate)
 ├── integration/
-│   └── coordinator.ts        # Koordynator sesji, tras i POI (SecureTrackingSessionCoordinator)
+│   └── coordinator.ts        # Koordynator sesji, tras, POI i UI (SecureTrackingSessionCoordinator)
 └── index.ts                  # Główny punkt eksportu biblioteki
 ```
 
@@ -231,12 +245,31 @@ console.log('PostGIS SQL:', radiusQuery.postGis.sql);
 // -> ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
 ```
 
+### 3. Sterowanie Taktycznym Panelem Dolnym (Tactical Bottom Sheet)
+
+```typescript
+import { TacticalBottomSheetController } from 'tracker';
+// lub import { TacticalBottomSheetController } from './components/TacticalBottomSheet.js';
+
+const sheetController = new TacticalBottomSheetController({
+  initialSnapPoint: 'PEEK',
+  neonThemeAccent: '#00F0FF',
+  onSnapChange: (snap) => console.log('Zmiana wysokości:', snap),
+});
+
+// Wybór punktu ze skanera POI
+sheetController.selectPoi(selectedPoi, poiCategory);
+
+// Zmiana wysokości (PEEK -> HALF -> EXPANDED)
+sheetController.setSnapPoint('HALF');
+```
+
 ---
 
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 107 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 114 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)
