@@ -147,7 +147,26 @@ Zaawansowany silnik symulacji astronomicznej i dynamicznego oświetlenia 3D dla 
 
 ---
 
-### 8. Automatyczna Optyka Kamery pod Taktyczny HUD (`src/maplibre/cameraOptics.ts`)
+### 8. Autonomiczny Moduł Solarny & Re-iniekcja Złotej Nitki (`src/lighting/solarStyleManager.ts`)
+Autonomiczny zarządca stylów solarnych z płynną podmianą stylów MapLibre:
+- **Autonomiczna Ewaluacja Solarna (`AutonomousSolarStyleManager`)**:
+  - `DAYLIGHT`: Pełne słońce i wysoki kontrast (wysokość słońca > 12°).
+  - `GOLDEN_HOUR`: Złota godzina / bursztynowy wschód i zachód (0° do 12°).
+  - `DUSK`: Zmierzch żeglarski i cywilny / fioletowo-indygo (-6° do 0°).
+  - `NIGHT_OBSIDIAN`: Pełnia księżyca i głęboka czerń nocy (< -6°).
+- **Histereza Kątowa (`hysteresisDeg`)**:
+  - Eliminuje migotanie (style flickering) na granicach faz solarnych przy powolnym zachodzie/wschodzie słońca.
+- **Pancerna Re-iniekcja Warstw po `style.load`**:
+  - Automatyczny nasłuch zdarzenia przeładowania stylu MapLibre.
+  - Bezstratna re-iniekcja Złotej Nitki (Outer Amber Glow, Mid Gold Radiant, Core White-Gold Line).
+  - Bezstratna re-iniekcja warstw radaru POI (fale radaru, pierścienie halo, piny kategorii i neonowe etykiety).
+  - Ponowna rejestracja źródeł GeoJSON i warstw telemetrycznych.
+- **Drenaż sesji (`SessionDrainHook`)**:
+  - Natychmiastowe zdemontowanie warstw świetlnych i wyłączenie pętli przełączania stylów.
+
+---
+
+### 9. Automatyczna Optyka Kamery pod Taktyczny HUD (`src/maplibre/cameraOptics.ts`)
 Zaawansowany silnik optyczny eliminujący problem zasłaniania widoku mapy (HUD Occlusion):
 - **Dynamiczne Insety Viewportu (`computeViewportInsets`)**:
   - Górny pasek Top Bar HUD (64px + 24px safety margin).
@@ -220,7 +239,8 @@ src/
 ├── lighting/
 │   ├── types.ts              # Typy oświetlenia dynamicznego (Solar/Lunar Ephemeris, Fazy, Paleta)
 │   ├── celestialCalculator.ts# Algorytmy pozycji Słońca i Księżyca (Julian Date, Azimuth, Altitude)
-│   └── dynamicLightingManager.ts # Menedżer światła MapLibre (Księżyc vs Słońce, Hillshade 3D, Cienie)
+│   ├── dynamicLightingManager.ts # Menedżer światła MapLibre (Księżyc vs Słońce, Hillshade 3D, Cienie)
+│   └── solarStyleManager.ts  # Autonomiczny Menedżer Stylów Solarnych i Re-iniekcja Złotej Nitki
 ├── maplibre/
 │   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS, oświetlenia 3D i zdarzeń
 │   ├── expressions.ts        # Helper wyrażeń stylów (feature-state, match, interpolate)

@@ -3,6 +3,7 @@ import type { MapLibreRouteManager, ClearRouteOptions } from '../maplibre/routeM
 import type { MapLibrePoiLayerManager } from '../maplibre/poiLayerManager.js';
 import type { TacticalBottomSheetController } from '../components/TacticalBottomSheet.js';
 import type { DynamicLightingManager } from '../lighting/dynamicLightingManager.js';
+import type { AutonomousSolarStyleManager } from '../lighting/solarStyleManager.js';
 import type { TacticalCameraOpticsEngine } from '../maplibre/cameraOptics.js';
 import type { TacticalQueryRaceGuard } from '../auth/queryRaceGuard.js';
 import type { TacticalTileCacheManager } from '../offline/tileCacheManager.js';
@@ -42,6 +43,7 @@ export interface SecureTrackingCoordinatorConfig {
   readonly poiManager?: PoiManager | undefined;
   readonly tacticalBottomSheet?: TacticalBottomSheetController | undefined;
   readonly dynamicLightingManager?: DynamicLightingManager | undefined;
+  readonly solarStyleManager?: AutonomousSolarStyleManager | undefined;
   readonly cameraOptics?: TacticalCameraOpticsEngine | undefined;
   readonly queryRaceGuard?: TacticalQueryRaceGuard | undefined;
   readonly tileCacheManager?: TacticalTileCacheManager | undefined;
@@ -55,6 +57,7 @@ export class SecureTrackingSessionCoordinator {
   private readonly poiManager: PoiManager | undefined;
   private readonly tacticalBottomSheet: TacticalBottomSheetController | undefined;
   private readonly dynamicLightingManager: DynamicLightingManager | undefined;
+  private readonly solarStyleManager: AutonomousSolarStyleManager | undefined;
   private readonly cameraOptics: TacticalCameraOpticsEngine | undefined;
   private readonly queryRaceGuard: TacticalQueryRaceGuard | undefined;
   private readonly tileCacheManager: TacticalTileCacheManager | undefined;
@@ -73,6 +76,7 @@ export class SecureTrackingSessionCoordinator {
     this.poiManager = config.poiManager;
     this.tacticalBottomSheet = config.tacticalBottomSheet;
     this.dynamicLightingManager = config.dynamicLightingManager;
+    this.solarStyleManager = config.solarStyleManager;
     this.cameraOptics = config.cameraOptics;
     this.queryRaceGuard = config.queryRaceGuard;
     this.tileCacheManager = config.tileCacheManager;
@@ -109,22 +113,27 @@ export class SecureTrackingSessionCoordinator {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.dynamicLightingManager));
     }
 
-    // 6. Register Camera Optics Engine drain hook if provided
+    // 6. Register Solar Style Manager drain hook if provided
+    if (this.solarStyleManager) {
+      this.unregisterHooks.push(this.authBooth.registerDrainHook(this.solarStyleManager));
+    }
+
+    // 7. Register Camera Optics Engine drain hook if provided
     if (this.cameraOptics) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.cameraOptics));
     }
 
-    // 7. Register Query Race Guard drain hook if provided
+    // 8. Register Query Race Guard drain hook if provided
     if (this.queryRaceGuard) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.queryRaceGuard));
     }
 
-    // 8. Register Tile Cache Manager drain hook if provided
+    // 9. Register Tile Cache Manager drain hook if provided
     if (this.tileCacheManager) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.tileCacheManager));
     }
 
-    // 9. Register Service Worker Handler drain hook if provided
+    // 10. Register Service Worker Handler drain hook if provided
     if (this.serviceWorkerHandler) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.serviceWorkerHandler));
     }
@@ -236,6 +245,10 @@ export class SecureTrackingSessionCoordinator {
 
   public getDynamicLightingManager(): DynamicLightingManager | undefined {
     return this.dynamicLightingManager;
+  }
+
+  public getSolarStyleManager(): AutonomousSolarStyleManager | undefined {
+    return this.solarStyleManager;
   }
 
   public getCameraOptics(): TacticalCameraOpticsEngine | undefined {

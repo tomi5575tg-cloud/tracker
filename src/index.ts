@@ -50,10 +50,11 @@ export * from './offline/serviceWorkerHandler.js';
 export * from './components/TacticalBottomSheet.js';
 export * from './components/TacticalMapCockpit.js';
 
-// Dynamic Lighting Module (Księżyc vs Słońce)
+// Dynamic Lighting Module (Księżyc vs Słońce & Autonomous Solar Styles)
 export * from './lighting/types.js';
 export * from './lighting/celestialCalculator.js';
 export * from './lighting/dynamicLightingManager.js';
+export * from './lighting/solarStyleManager.js';
 
 // Integration Coordinator
 export * from './integration/coordinator.js';

@@ -134,6 +134,8 @@ export interface MapLibreMapInstance {
   removeFeatureState?(feature: MapLibreFeatureStateFeature, key?: string): void;
   getCanvas?(): { style: { cursor: string } } | HTMLCanvasElement;
   getContainer?(): HTMLElement;
+  setStyle?(style: string | Record<string, unknown>, options?: { diff?: boolean }): void;
+  getStyle?(): Record<string, unknown> | string | undefined;
   once(event: string, listener: (...args: unknown[]) => void): void;
   on(event: string, listener: (...args: unknown[]) => void): void;
   on(event: string, layerId: string, listener: (e: MapLibreLayerEvent<any>) => void): void;

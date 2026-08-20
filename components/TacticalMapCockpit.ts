@@ -7,6 +7,7 @@ import { MapLibreRouteManager } from '../src/maplibre/routeManager.js';
 import { MapLibrePoiLayerManager } from '../src/maplibre/poiLayerManager.js';
 import { PoiManager } from '../src/poi/poiManager.js';
 import { DynamicLightingManager } from '../src/lighting/dynamicLightingManager.js';
+import { AutonomousSolarStyleManager, type TacticalSolarTheme } from '../src/lighting/solarStyleManager.js';
 import { TacticalCameraOpticsEngine, type TacticalHudInsetsConfig } from '../src/maplibre/cameraOptics.js';
 import { TacticalQueryRaceGuard } from '../src/auth/queryRaceGuard.js';
 import { TacticalTileCacheManager } from '../src/offline/tileCacheManager.js';
@@ -27,6 +28,7 @@ export interface TacticalCockpitConfig {
   readonly poiLayerManager?: MapLibrePoiLayerManager | undefined;
   readonly poiManager?: PoiManager | undefined;
   readonly dynamicLightingManager?: DynamicLightingManager | undefined;
+  readonly solarStyleManager?: AutonomousSolarStyleManager | undefined;
   readonly tacticalBottomSheet?: TacticalBottomSheetController | undefined;
   readonly cameraOptics?: TacticalCameraOpticsEngine | undefined;
   readonly queryRaceGuard?: TacticalQueryRaceGuard | undefined;
@@ -47,6 +49,7 @@ export interface CockpitTopBarViewModel {
   readonly tenantId: string;
   readonly celestialBody: 'SUN' | 'MOON';
   readonly celestialPhaseName: string;
+  readonly solarTheme: TacticalSolarTheme;
   readonly liveGpsConnected: boolean;
   readonly clockTimeFormatted: string;
 }
@@ -89,7 +92,7 @@ export const TACTICAL_COCKPIT_TAILWIND_CLASSES = Object.freeze({
 /**
  * TacticalMapCockpitController:
  * High-performance orchestrator wiring MapLibre GL JS, Single-Booth Auth Lock,
- * Golden Thread Route Glow, POI Radar Points, Dynamic Moon/Sun Lighting,
+ * Golden Thread Route Glow, POI Radar Points, Autonomous Solar Style Switching,
  * Spatial Query Radar, Tactical Camera Optics, Tile Cache & Offline Service Worker into a unified HUD cockpit.
  */
 export class TacticalMapCockpitController {
@@ -99,6 +102,7 @@ export class TacticalMapCockpitController {
   private readonly poiLayerManager: MapLibrePoiLayerManager;
   private readonly poiManager: PoiManager;
   private readonly dynamicLightingManager: DynamicLightingManager;
+  private readonly solarStyleManager: AutonomousSolarStyleManager;
   private readonly tacticalBottomSheet: TacticalBottomSheetController;
   private readonly cameraOptics: TacticalCameraOpticsEngine;
   private readonly queryRaceGuard: TacticalQueryRaceGuard;
@@ -138,6 +142,26 @@ export class TacticalMapCockpitController {
         updateIntervalMs: 5000,
       });
 
+    this.solarStyleManager =
+      config.solarStyleManager ??
+      new AutonomousSolarStyleManager(this.map, {
+        lightingManager: this.dynamicLightingManager,
+        glowConfig: {
+          routeSourceId: this.routeManager.getConfig().routeSourceId,
+          poiSourceId: 'tracker-poi-source',
+        },
+      });
+
+    // Ensure route and POI sources re-inject after style load
+    this.solarStyleManager.onReinject(() => {
+      this.routeManager.ensureLayers();
+      const currentRoute = this.routeManager.getCurrentRoute();
+      if (currentRoute) {
+        this.routeManager.setRoute(currentRoute);
+      }
+      this.poiLayerManager.ensureLayersInitialized();
+    });
+
     this.tacticalBottomSheet =
       config.tacticalBottomSheet ??
       new TacticalBottomSheetController({
@@ -165,6 +189,7 @@ export class TacticalMapCockpitController {
       poiManager: this.poiManager,
       tacticalBottomSheet: this.tacticalBottomSheet,
       dynamicLightingManager: this.dynamicLightingManager,
+      solarStyleManager: this.solarStyleManager,
       cameraOptics: this.cameraOptics,
       queryRaceGuard: this.queryRaceGuard,
       tileCacheManager: this.tileCacheManager,
@@ -212,6 +237,10 @@ export class TacticalMapCockpitController {
 
   public getDynamicLightingManager(): DynamicLightingManager {
     return this.dynamicLightingManager;
+  }
+
+  public getSolarStyleManager(): AutonomousSolarStyleManager {
+    return this.solarStyleManager;
   }
 
   public getTacticalBottomSheet(): TacticalBottomSheetController {
@@ -340,6 +369,7 @@ export class TacticalMapCockpitController {
    */
   public toggleDayNight(hours = 12): DynamicLightingState {
     const nextState = this.dynamicLightingManager.advanceHours(hours);
+    this.solarStyleManager.handleLightingUpdate(nextState);
     return nextState;
   }
 
@@ -358,6 +388,7 @@ export class TacticalMapCockpitController {
     const session = this.authBooth.getSession();
     const lighting = this.dynamicLightingManager.getState();
     const sheetState = this.tacticalBottomSheet.getState();
+    const currentTheme = this.solarStyleManager.getCurrentTheme();
 
     const topBar: CockpitTopBarViewModel = {
       sessionUsername: session?.username ?? 'NIEZALOGOWANY',
@@ -369,6 +400,7 @@ export class TacticalMapCockpitController {
         lighting.dominantBody === 'SUN'
           ? lighting.sun.phase.replace(/_/g, ' ')
           : lighting.moon.phaseName.replace(/_/g, ' '),
+      solarTheme: currentTheme,
       liveGpsConnected: true,
       clockTimeFormatted: new Date(lighting.timestamp).toLocaleTimeString('pl-PL', {
         hour: '2-digit',
@@ -408,7 +440,7 @@ export class TacticalMapCockpitController {
       <div>
         <div class="${c.topBarTitle}">Tracker HUD Cockpit</div>
         <div class="text-[10px] font-mono text-cyan-400/80">
-          TENANT: <span class="text-slate-200">${vm.topBar.tenantId}</span> | FAZA: <span class="text-cyan-300">${vm.topBar.celestialPhaseName}</span>
+          TENANT: <span class="text-slate-200">${vm.topBar.tenantId}</span> | FAZA: <span class="text-cyan-300">${vm.topBar.celestialPhaseName}</span> | STYL: <span class="text-amber-300">${vm.topBar.solarTheme}</span>
         </div>
       </div>
     </div>
@@ -458,6 +490,7 @@ export class TacticalMapCockpitController {
 
     this.coordinator.destroy();
     this.dynamicLightingManager.destroy();
+    this.solarStyleManager.destroy();
     this.tacticalBottomSheet.destroy();
     this.cameraOptics.destroy();
     this.queryRaceGuard.destroy();
