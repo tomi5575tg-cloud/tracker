@@ -46,6 +46,12 @@ export * from './offline/tileCacheManager.js';
 export * from './offline/goldenThreadFallback.js';
 export * from './offline/serviceWorkerHandler.js';
 
+// Supabase Edge Functions Adaptive Telemetry Bridge & AI Tier Scaling
+export * from './edge/types.js';
+export * from './edge/adaptiveSampler.js';
+export * from './edge/aiTierEngine.js';
+export * from './edge/supabaseBridge.js';
+
 // Tactical UI Components
 export * from './components/TacticalBottomSheet.js';
 export * from './components/TacticalMapCockpit.js';

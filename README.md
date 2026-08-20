@@ -214,9 +214,29 @@ Wysokowydajny podsystem buforowania kafelków rastrowych/wektorowych oraz dynami
 
 ---
 
-### 11. Integracja z Koordynatorem Sesji (`src/integration/`)
-- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager`, `TacticalCameraOpticsEngine`, `TacticalQueryRaceGuard`, `TacticalTileCacheManager`, `TacticalServiceWorkerHandler` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
-  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`), optykę kamery (`drain`), zapytania (`drain`), bufor kafelków (`drain`) oraz panel taktyczny (`drain`).
+### 11. Adaptacyjny Most Telemetryczny dla Supabase Edge Functions (`src/edge/`)
+Wysokowydajny most telemetryczny łączący sprzętowy Turbo Boost z chmurowym skalowaniem analityki AI:
+- **Silnik Adaptacyjnego Próbkowania i Dawkowania Mocy (`AdaptiveSampler`)**:
+  - Tłumaczy prędkość pojazdu, wychylenie przepustnicy i przeciążenia (g-force) na poziomy mocy: `IDLE`, `ECO`, `CRUISE`, `SPORT`, `TURBO_MAX`.
+  - Płynnie moduluje interwał próbkowania (od 5000 ms przy postoju do 200 ms przy Turbo Max).
+  - Chroni przepustowość pod dużym obciążeniem jednostki (`CRITICAL` load throttling).
+  - Inteligentnie filtruje strumień punktów z zachowaniem ostrych skrętów (>15°) i pików przeciążeń.
+- **Skalowanie Głębokości Analizy AI (`AiAnalysisTierEngine`)**:
+  - `TIER_0_RAW_INGEST`: Podstawowa walidacja koordynatów WGS84 i integralności ramki.
+  - `TIER_1_KINEMATICS`: Monitoring prędkości, wektorów i przeciążeń bocznych/wzdłużnych.
+  - `TIER_2_SAFETY_CORRIDOR`: Geofencing korytarza trasy, alerty przekroczenia prędkości i przeciążenia termicznego.
+  - `TIER_3_DEEP_ANOMALY`: Zaawansowana fuzja czujników, szacowanie przepływu paliwa i odzysku energii z hamowania.
+  - `TIER_4_FULL_COCKPIT_AI`: Pełna taktyczna rekomendacja manewru, alerty stabilności i wektorowanie 3D.
+- **Kontroler Edge Function (`SupabaseTelemetryBridgeHandler`)**:
+  - Deno / Edge Runtime kompatybilny handler HTTP z nagłówkami CORS i metrykami nagłówkowymi (`x-tracker-turbo-level`, `x-tracker-ai-tier`, `x-tracker-power-dosing`).
+  - Automatyczna konwersja do RFC 7946 GeoJSON (`routeCollection`, `waypointCollection`).
+  - Weryfikacja tożsamości przez Śluzę Logowania (`AuthLockBooth`) i drenaż sesji (`SessionDrainHook`).
+
+---
+
+### 12. Integracja z Koordynatorem Sesji (`src/integration/`)
+- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager`, `AutonomousSolarStyleManager`, `TacticalCameraOpticsEngine`, `TacticalQueryRaceGuard`, `TacticalTileCacheManager`, `TacticalServiceWorkerHandler`, `SupabaseTelemetryBridgeHandler` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
+  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`), optykę kamery (`drain`), zapytania (`drain`), bufor kafelków (`drain`), most telemetryczny (`drain`) oraz panel taktyczny (`drain`).
   - Wyświetlanie POI (`displayPois`) automatycznie respektuje uprawnienia aktywnej sesji.
   - Wybór punktu `selectPoi` / `onItemSelect` automatycznie kadruje kamerę w sweet spocie HUD.
 
@@ -253,6 +273,11 @@ src/
 │   ├── tileCacheManager.ts   # Menedżer bufora kafelków LRU i obliczeń geodezyjnych slippy map
 │   ├── goldenThreadFallback.ts # Dynamiczny generator syntetycznych kafelków SVG dla Złotej Nitki
 │   └── serviceWorkerHandler.ts # Interceptor żądań kafelkowych Cache-First / Offline Fallback
+├── edge/
+│   ├── types.ts              # Typy telemetrii, poziomów Turbo Boost i głębokości analizy AI
+│   ├── adaptiveSampler.ts    # Adaptacyjne próbkowanie i dawkowanie mocy (Power Throttling)
+│   ├── aiTierEngine.ts       # Silnik skalowania analizy AI (Tier 0 - Tier 4)
+│   └── supabaseBridge.ts     # Most telemetryczny dla Supabase Edge Functions (RFC 7946 GeoJSON)
 ├── spatial/
 │   ├── types.ts              # Definicje typów zapytań przestrzennych (BBox, Radius, Corridor)
 │   ├── geoUtils.ts           # Obliczenia geodezyjne (Haversine, DestinationPoint, Poligony)
@@ -443,7 +468,7 @@ cockpit.controller.toggleDayNight(12);
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 160 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 171 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)

@@ -12,6 +12,7 @@ import { TacticalCameraOpticsEngine, type TacticalHudInsetsConfig } from '../src
 import { TacticalQueryRaceGuard } from '../src/auth/queryRaceGuard.js';
 import { TacticalTileCacheManager } from '../src/offline/tileCacheManager.js';
 import { TacticalServiceWorkerHandler } from '../src/offline/serviceWorkerHandler.js';
+import { SupabaseTelemetryBridgeHandler } from '../src/edge/supabaseBridge.js';
 import type { DynamicLightingState } from '../src/lighting/types.js';
 import {
   TacticalBottomSheetController,
@@ -34,6 +35,7 @@ export interface TacticalCockpitConfig {
   readonly queryRaceGuard?: TacticalQueryRaceGuard | undefined;
   readonly tileCacheManager?: TacticalTileCacheManager | undefined;
   readonly serviceWorkerHandler?: TacticalServiceWorkerHandler | undefined;
+  readonly telemetryBridge?: SupabaseTelemetryBridgeHandler | undefined;
   readonly insetsConfig?: TacticalHudInsetsConfig | undefined;
   readonly initialCenter?: Position | undefined;
   readonly initialZoom?: number | undefined;
@@ -108,6 +110,7 @@ export class TacticalMapCockpitController {
   private readonly queryRaceGuard: TacticalQueryRaceGuard;
   private readonly tileCacheManager: TacticalTileCacheManager;
   private readonly serviceWorkerHandler: TacticalServiceWorkerHandler;
+  private readonly telemetryBridge: SupabaseTelemetryBridgeHandler;
   private readonly coordinator: SecureTrackingSessionCoordinator;
   private readonly config: TacticalCockpitConfig;
 
@@ -133,6 +136,16 @@ export class TacticalMapCockpitController {
       config.serviceWorkerHandler ??
       new TacticalServiceWorkerHandler({
         tileCacheManager: this.tileCacheManager,
+      });
+
+    this.telemetryBridge =
+      config.telemetryBridge ??
+      new SupabaseTelemetryBridgeHandler({
+        authBooth: this.authBooth,
+        onBridgeProcessed: (_result, route) => {
+          this.displayRoute(route);
+          this.tacticalBottomSheet.setRoute(route);
+        },
       });
 
     this.dynamicLightingManager =
@@ -194,6 +207,7 @@ export class TacticalMapCockpitController {
       queryRaceGuard: this.queryRaceGuard,
       tileCacheManager: this.tileCacheManager,
       serviceWorkerHandler: this.serviceWorkerHandler,
+      telemetryBridge: this.telemetryBridge,
     });
 
     // 3. Apply Neon Glow Layers (Złota Nitka + Punkty Radaru POI) if enabled
@@ -261,6 +275,10 @@ export class TacticalMapCockpitController {
 
   public getServiceWorkerHandler(): TacticalServiceWorkerHandler {
     return this.serviceWorkerHandler;
+  }
+
+  public getTelemetryBridge(): SupabaseTelemetryBridgeHandler {
+    return this.telemetryBridge;
   }
 
   /**
@@ -496,6 +514,7 @@ export class TacticalMapCockpitController {
     this.queryRaceGuard.destroy();
     this.tileCacheManager.destroy();
     this.serviceWorkerHandler.destroy();
+    this.telemetryBridge.destroy();
   }
 }
 

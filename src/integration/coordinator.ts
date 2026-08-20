@@ -8,6 +8,7 @@ import type { TacticalCameraOpticsEngine } from '../maplibre/cameraOptics.js';
 import type { TacticalQueryRaceGuard } from '../auth/queryRaceGuard.js';
 import type { TacticalTileCacheManager } from '../offline/tileCacheManager.js';
 import type { TacticalServiceWorkerHandler } from '../offline/serviceWorkerHandler.js';
+import type { SupabaseTelemetryBridgeHandler } from '../edge/supabaseBridge.js';
 import type { PoiManager } from '../poi/poiManager.js';
 import type { PoiItem, PoiGeoJsonFeatureCollection } from '../poi/types.js';
 import type { AuthLockBooth } from '../auth/authBooth.js';
@@ -48,6 +49,7 @@ export interface SecureTrackingCoordinatorConfig {
   readonly queryRaceGuard?: TacticalQueryRaceGuard | undefined;
   readonly tileCacheManager?: TacticalTileCacheManager | undefined;
   readonly serviceWorkerHandler?: TacticalServiceWorkerHandler | undefined;
+  readonly telemetryBridge?: SupabaseTelemetryBridgeHandler | undefined;
 }
 
 export class SecureTrackingSessionCoordinator {
@@ -62,6 +64,7 @@ export class SecureTrackingSessionCoordinator {
   private readonly queryRaceGuard: TacticalQueryRaceGuard | undefined;
   private readonly tileCacheManager: TacticalTileCacheManager | undefined;
   private readonly serviceWorkerHandler: TacticalServiceWorkerHandler | undefined;
+  private readonly telemetryBridge: SupabaseTelemetryBridgeHandler | undefined;
   private readonly config: SecureTrackingCoordinatorConfig;
   private unregisterHooks: Array<() => void> = [];
 
@@ -81,6 +84,7 @@ export class SecureTrackingSessionCoordinator {
     this.queryRaceGuard = config.queryRaceGuard;
     this.tileCacheManager = config.tileCacheManager;
     this.serviceWorkerHandler = config.serviceWorkerHandler;
+    this.telemetryBridge = config.telemetryBridge;
     this.config = config;
     this.setupIntegration();
   }
@@ -136,6 +140,11 @@ export class SecureTrackingSessionCoordinator {
     // 10. Register Service Worker Handler drain hook if provided
     if (this.serviceWorkerHandler) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.serviceWorkerHandler));
+    }
+
+    // 11. Register Supabase Telemetry Bridge drain hook if provided
+    if (this.telemetryBridge) {
+      this.unregisterHooks.push(this.authBooth.registerDrainHook(this.telemetryBridge));
     }
   }
 
@@ -265,6 +274,10 @@ export class SecureTrackingSessionCoordinator {
 
   public getServiceWorkerHandler(): TacticalServiceWorkerHandler | undefined {
     return this.serviceWorkerHandler;
+  }
+
+  public getTelemetryBridge(): SupabaseTelemetryBridgeHandler | undefined {
+    return this.telemetryBridge;
   }
 
   /**
