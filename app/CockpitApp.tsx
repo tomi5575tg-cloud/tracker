@@ -17,8 +17,20 @@ import type { MapLibreMapInstance } from '../src/maplibre/types.js';
 import type { WeldAudit } from '../src/weld/hardwareToPixelPipeline.js';
 import type { GnssSourceKind } from '../src/hardware/types.js';
 import type { RouteData } from '../src/types.js';
+import { getTacticalAdvice } from '../src/tactical/advice.js';
+import type { TacticalAdvice } from '../src/tactical/types.js';
 
 const WARSAW: [number, number] = [21.0122, 52.2297];
+
+const DEMO_HGV = {
+  heightMeters: 4.0,
+  widthMeters: 2.55,
+  lengthMeters: 16.5,
+  grossWeightTonnes: 40,
+  axleCount: 5,
+  hasTrailer: true,
+  limiterKmh: 85,
+} as const;
 
 const DEMO_SESSION = {
   sessionId: 'demo-duty-1',
@@ -49,6 +61,7 @@ export function CockpitApp() {
   const [cabinState, setCabinState] = useState('EMPTY');
   const [hardwareNote, setHardwareNote] = useState('inicjalizacja szyny sprzętowej…');
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [advice, setAdvice] = useState<TacticalAdvice | null>(null);
   const pipelineRef = useRef<HardwareToPixelPipeline | null>(null);
   const boothRef = useRef<AuthLockBooth | null>(null);
   const busRef = useRef<HardwareTelemetryBus | null>(null);
@@ -131,6 +144,17 @@ export function CockpitApp() {
           map.jumpTo({
             center: [next.coordinate[0], next.coordinate[1]],
             bearing: next.vehicleGeoJson.properties.headingDeg,
+          });
+          void getTacticalAdvice({
+            currentCoords: fix.coordinate,
+            speed: fix.speedKmh ?? 0,
+            isNight: isNightDuty(new Date()),
+            hgvProfile: DEMO_HGV,
+            nextManeuver: { type: 'STRAIGHT', distanceMeters: 4000 },
+          }).then((nextAdvice) => {
+            if (!cancelled) {
+              setAdvice(nextAdvice);
+            }
           });
         },
         onError: (error) => {
@@ -245,10 +269,20 @@ export function CockpitApp() {
             </div>
           </>
         )}
+        {advice && (
+          <div className={`advice advice-${advice.priority.toLowerCase()}`}>
+            {advice.priority} · {advice.headline}
+          </div>
+        )}
         {errorText && <div className="hud-error">{errorText}</div>}
       </aside>
     </div>
   );
+}
+
+function isNightDuty(at: Date): boolean {
+  const hour = at.getHours();
+  return hour < 6 || hour >= 21;
 }
 
 function buildDutyRoute(coordinate: [number, number] | readonly number[], userId: string): RouteData {

@@ -72,6 +72,9 @@ export * from './weld/errors.js';
 export * from './weld/hardwareToPixelPipeline.js';
 export * from './weld/bindWebGlLoss.js';
 
+export * from './tactical/types.js';
+export * from './tactical/advice.js';
+
 // Tactical UI Components
 export * from './components/TacticalBottomSheet.js';
 export * from './components/TacticalMapCockpit.js';
