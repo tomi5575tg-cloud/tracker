@@ -18,6 +18,9 @@ import type { WeldAudit } from '../src/weld/hardwareToPixelPipeline.js';
 import type { GnssSourceKind } from '../src/hardware/types.js';
 import type { RouteData } from '../src/types.js';
 import { useCopilotAgent } from './useCopilotAgent.js';
+import { HighwayHorn } from '../src/audio/highwayHorn.js';
+import { HighwayHornError } from '../src/audio/types.js';
+import { evaluateHornTrigger } from '../src/audio/hornTrigger.js';
 
 const WARSAW: [number, number] = [21.0122, 52.2297];
 
@@ -60,12 +63,20 @@ export function CockpitApp() {
   const [cabinState, setCabinState] = useState('EMPTY');
   const [hardwareNote, setHardwareNote] = useState('inicjalizacja szyny sprzętowej…');
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [hornNote, setHornNote] = useState<string | null>(null);
+  const [hornCritical, setHornCritical] = useState(false);
   const { advice, source: copilotSource, networkState, requestAdvice } = useCopilotAgent();
   const requestAdviceRef = useRef(requestAdvice);
   requestAdviceRef.current = requestAdvice;
   const pipelineRef = useRef<HardwareToPixelPipeline | null>(null);
   const boothRef = useRef<AuthLockBooth | null>(null);
   const busRef = useRef<HardwareTelemetryBus | null>(null);
+  const hornRef = useRef<HighwayHorn | null>(null);
+  const wasHornCriticalRef = useRef(false);
+  const pendingHornBlastRef = useRef(false);
+  if (hornRef.current === null) {
+    hornRef.current = new HighwayHorn();
+  }
 
   useEffect(() => {
     const mapContainer = mapNode.current;
@@ -96,6 +107,7 @@ export function CockpitApp() {
 
     boothRef.current = booth;
     pipelineRef.current = pipeline;
+    booth.registerDrainHook(hornRef.current!);
 
     const map = new maplibregl.Map({
       container: mapContainer,
@@ -205,11 +217,81 @@ export function CockpitApp() {
       unbindWebGl?.();
       detachGlow?.();
       busRef.current?.stop();
+      hornRef.current?.stop();
       map.remove();
     };
   }, []);
 
+  useEffect(() => {
+    const horn = hornRef.current;
+    if (!horn) {
+      return;
+    }
+    const result = evaluateHornTrigger({
+      wasCritical: wasHornCriticalRef.current,
+      priority: advice?.priority,
+      mustStop: advice?.mustStop,
+    });
+    wasHornCriticalRef.current = result.isCritical;
+    setHornCritical(result.isCritical);
+
+    if (result.action === 'STOP') {
+      pendingHornBlastRef.current = false;
+      horn.stop();
+      setHornNote(null);
+      return;
+    }
+    if (result.action !== 'BLAST') {
+      return;
+    }
+
+    void horn
+      .blastCritical()
+      .then(() => {
+        pendingHornBlastRef.current = false;
+        setHornNote(null);
+      })
+      .catch((error: unknown) => {
+        pendingHornBlastRef.current = true;
+        const detail = error instanceof Error ? error.message : 'AudioContext zawieszony';
+        setHornNote(`kliknij kabinę aby uzbroić klakson 880 Hz (${detail})`);
+      });
+  }, [advice?.priority, advice?.mustStop]);
+
+  const armCabinHorn = (event: { target: EventTarget | null }): void => {
+    if (event.target instanceof Element && event.target.closest('button')) {
+      return;
+    }
+    const horn = hornRef.current;
+    if (!horn) {
+      return;
+    }
+    void (async () => {
+      try {
+        await horn.arm();
+        if (pendingHornBlastRef.current) {
+          await horn.blastCritical();
+          pendingHornBlastRef.current = false;
+          setHornNote(null);
+        }
+      } catch (error) {
+        const detail =
+          error instanceof HighwayHornError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : 'brak Web Audio';
+        setHornNote(`kliknij kabinę aby uzbroić klakson 880 Hz (${detail})`);
+      }
+    })();
+  };
+
   const panicDrain = (): void => {
+    pendingHornBlastRef.current = false;
+    wasHornCriticalRef.current = false;
+    setHornCritical(false);
+    setHornNote(null);
+    hornRef.current?.stop();
     void boothRef.current?.exitBooth('PANIC_DRAIN_HUD');
     busRef.current?.drain('PANIC_DRAIN_HUD');
   };
@@ -217,7 +299,7 @@ export function CockpitApp() {
   const degraded = audit?.activeRenderer !== 'MAPLIBRE_WEBGL';
 
   return (
-    <div className="cockpit-root">
+    <div className="cockpit-root" onPointerDown={armCabinHorn}>
       <div ref={mapNode} className="cockpit-map" data-testid="map-pane" />
       <canvas
         ref={overlayNode}
@@ -241,6 +323,11 @@ export function CockpitApp() {
             {audit?.screenFilled ? 'EKRAN PEŁNY' : 'EKRAN?'}
           </span>
           <span className="pill">{audit?.degradationLevel ?? 'LEVEL_?'}</span>
+          {hornCritical ? (
+            <span className="pill horn" data-testid="highway-horn">
+              KLAKSON 880 Hz
+            </span>
+          ) : null}
         </div>
         <button type="button" className="panic" onClick={panicDrain}>
           DRENAŻ
@@ -271,6 +358,7 @@ export function CockpitApp() {
             {copilotSource === 'LOCAL_EMERGENCY_INJECTION' ? 'WTRYSK LOKALNY' : 'CHMURA'} · {networkState} · {advice.priority} · {advice.headline}
           </div>
         )}
+        {hornNote && <div className="hud-error">{hornNote}</div>}
         {errorText && <div className="hud-error">{errorText}</div>}
       </aside>
     </div>

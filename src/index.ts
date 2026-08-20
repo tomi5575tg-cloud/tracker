@@ -76,6 +76,11 @@ export * from './tactical/types.js';
 export * from './tactical/advice.js';
 export * from './tactical/copilotAgent.js';
 
+export * from './audio/types.js';
+export * from './audio/hornTrigger.js';
+export { HighwayHorn } from './audio/highwayHorn.js';
+export type { HighwayHornConfig } from './audio/highwayHorn.js';
+
 // Tactical UI Components
 export * from './components/TacticalBottomSheet.js';
 export * from './components/TacticalMapCockpit.js';

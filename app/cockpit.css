@@ -118,6 +118,12 @@ body,
   border-color: rgba(251, 113, 133, 0.5);
 }
 
+.pill.horn {
+  color: #ffe566;
+  border-color: rgba(255, 214, 10, 0.65);
+  box-shadow: 0 0 10px rgba(255, 214, 10, 0.28);
+}
+
 .panic {
   border: 1px solid rgba(251, 113, 133, 0.55);
   background: rgba(76, 5, 25, 0.85);
