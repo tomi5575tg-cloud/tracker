@@ -7,6 +7,8 @@ import { MapLibreRouteManager } from '../src/maplibre/routeManager.js';
 import { MapLibrePoiLayerManager } from '../src/maplibre/poiLayerManager.js';
 import { PoiManager } from '../src/poi/poiManager.js';
 import { DynamicLightingManager } from '../src/lighting/dynamicLightingManager.js';
+import { TacticalCameraOpticsEngine, type TacticalHudInsetsConfig } from '../src/maplibre/cameraOptics.js';
+import { TacticalQueryRaceGuard } from '../src/auth/queryRaceGuard.js';
 import type { DynamicLightingState } from '../src/lighting/types.js';
 import {
   TacticalBottomSheetController,
@@ -24,6 +26,9 @@ export interface TacticalCockpitConfig {
   readonly poiManager?: PoiManager | undefined;
   readonly dynamicLightingManager?: DynamicLightingManager | undefined;
   readonly tacticalBottomSheet?: TacticalBottomSheetController | undefined;
+  readonly cameraOptics?: TacticalCameraOpticsEngine | undefined;
+  readonly queryRaceGuard?: TacticalQueryRaceGuard | undefined;
+  readonly insetsConfig?: TacticalHudInsetsConfig | undefined;
   readonly initialCenter?: Position | undefined;
   readonly initialZoom?: number | undefined;
   readonly enableNeonGlow?: boolean | undefined;
@@ -81,7 +86,7 @@ export const TACTICAL_COCKPIT_TAILWIND_CLASSES = Object.freeze({
  * TacticalMapCockpitController:
  * High-performance orchestrator wiring MapLibre GL JS, Single-Booth Auth Lock,
  * Golden Thread Route Glow, POI Radar Points, Dynamic Moon/Sun Lighting,
- * Spatial Query Radar and Tactical Bottom Sheet into a unified HUD cockpit.
+ * Spatial Query Radar, Tactical Camera Optics and Bottom Sheet into a unified HUD cockpit.
  */
 export class TacticalMapCockpitController {
   private readonly map: MapLibreMapInstance;
@@ -91,6 +96,8 @@ export class TacticalMapCockpitController {
   private readonly poiManager: PoiManager;
   private readonly dynamicLightingManager: DynamicLightingManager;
   private readonly tacticalBottomSheet: TacticalBottomSheetController;
+  private readonly cameraOptics: TacticalCameraOpticsEngine;
+  private readonly queryRaceGuard: TacticalQueryRaceGuard;
   private readonly coordinator: SecureTrackingSessionCoordinator;
   private readonly config: TacticalCockpitConfig;
 
@@ -110,6 +117,7 @@ export class TacticalMapCockpitController {
     this.routeManager = config.routeManager ?? new MapLibreRouteManager(this.map);
     this.poiManager = config.poiManager ?? new PoiManager({ authBooth: this.authBooth });
     this.poiLayerManager = config.poiLayerManager ?? new MapLibrePoiLayerManager(this.map);
+    this.queryRaceGuard = config.queryRaceGuard ?? new TacticalQueryRaceGuard();
 
     this.dynamicLightingManager =
       config.dynamicLightingManager ??
@@ -123,9 +131,20 @@ export class TacticalMapCockpitController {
       new TacticalBottomSheetController({
         initialSnapPoint: 'PEEK',
         initialTab: 'RADAR_POI',
+        onSnapChange: (snap) => {
+          this.cameraOptics.setBottomSheetSnap(snap);
+        },
         onDrained: (reason) => {
           config.onSessionDrain?.(reason);
         },
+      });
+
+    this.cameraOptics =
+      config.cameraOptics ??
+      new TacticalCameraOpticsEngine(this.map, {
+        insetsConfig: config.insetsConfig,
+        defaultCamera: { center: [this.currentCenter[0], this.currentCenter[1]], zoom: this.currentZoom },
+        initialSnapPoint: this.tacticalBottomSheet.getState().snapPoint,
       });
 
     // 2. Wire Secure Tracking Coordinator
@@ -134,6 +153,8 @@ export class TacticalMapCockpitController {
       poiManager: this.poiManager,
       tacticalBottomSheet: this.tacticalBottomSheet,
       dynamicLightingManager: this.dynamicLightingManager,
+      cameraOptics: this.cameraOptics,
+      queryRaceGuard: this.queryRaceGuard,
     });
 
     // 3. Apply Neon Glow Layers (Złota Nitka + Punkty Radaru POI) if enabled
@@ -183,8 +204,16 @@ export class TacticalMapCockpitController {
     return this.tacticalBottomSheet;
   }
 
+  public getCameraOptics(): TacticalCameraOpticsEngine {
+    return this.cameraOptics;
+  }
+
+  public getQueryRaceGuard(): TacticalQueryRaceGuard {
+    return this.queryRaceGuard;
+  }
+
   /**
-   * Dispatches item selection across the entire cockpit (Map camera, GPU layer highlight, bottom sheet)
+   * Dispatches item selection across the entire cockpit (Camera Optics HUD framing, GPU layer highlight, bottom sheet)
    */
   public selectPoi(poi: PoiItem | string | null, centerCamera = true): void {
     let resolvedPoi: PoiItem | null = null;
@@ -203,10 +232,10 @@ export class TacticalMapCockpitController {
   }
 
   /**
-   * Sets active telemetry route
+   * Sets active telemetry route and auto-frames camera
    */
-  public displayRoute(route: RouteData): void {
-    this.coordinator.displayRoute(route);
+  public displayRoute(route: RouteData, autoFrame = true): void {
+    this.coordinator.displayRoute(route, autoFrame);
     this.tacticalBottomSheet.setRoute(route);
   }
 
@@ -218,7 +247,45 @@ export class TacticalMapCockpitController {
   }
 
   /**
-   * Performs Radar Spatial Scan within radius around map center
+   * Performs Radar Spatial Scan within radius around map center protected against race conditions
+   */
+  public async performRadarScanSafe(radiusMeters = 15000): Promise<{
+    committed: boolean;
+    totalMatches: number;
+    items: readonly PoiItem[];
+  }> {
+    const res = await this.queryRaceGuard.executeSafe(
+      'radar_scan',
+      async () => {
+        const searchResult = this.poiManager.searchRadius(this.currentCenter, radiusMeters, {
+          sortByDistance: true,
+        });
+        return searchResult;
+      },
+      (searchResult) => {
+        this.displayPois(searchResult.items);
+        if (searchResult.items.length > 0) {
+          this.tacticalBottomSheet.setSnapPoint('HALF');
+          // Auto-frame all found items with camera optics
+          if (searchResult.items.length === 1) {
+            this.cameraOptics.framePoi(searchResult.items[0]!);
+          } else if (searchResult.items.length > 1) {
+            const coords = searchResult.items.map((i) => i.coordinate);
+            this.cameraOptics.frameCoordinates(coords);
+          }
+        }
+      }
+    );
+
+    return {
+      committed: res.committed,
+      totalMatches: res.result?.totalMatches ?? 0,
+      items: res.result?.items ?? [],
+    };
+  }
+
+  /**
+   * Performs synchronous Radar Spatial Scan within radius around map center
    */
   public performRadarScan(radiusMeters = 15000): {
     totalMatches: number;
@@ -232,6 +299,12 @@ export class TacticalMapCockpitController {
 
     if (searchResult.items.length > 0) {
       this.tacticalBottomSheet.setSnapPoint('HALF');
+      if (searchResult.items.length === 1) {
+        this.cameraOptics.framePoi(searchResult.items[0]!);
+      } else if (searchResult.items.length > 1) {
+        const coords = searchResult.items.map((i) => i.coordinate);
+        this.cameraOptics.frameCoordinates(coords);
+      }
     }
 
     return {
@@ -249,7 +322,7 @@ export class TacticalMapCockpitController {
   }
 
   /**
-   * Triggers panic session drain (clears map, POIs, route, HUD and locks booth)
+   * Triggers panic session drain (clears map, POIs, route, HUD, queries, and locks booth)
    */
   public async triggerPanicDrain(reason = 'COCKPIT_PANIC_DRAIN'): Promise<void> {
     await this.authBooth.exitBooth(reason);
@@ -364,6 +437,8 @@ export class TacticalMapCockpitController {
     this.coordinator.destroy();
     this.dynamicLightingManager.destroy();
     this.tacticalBottomSheet.destroy();
+    this.cameraOptics.destroy();
+    this.queryRaceGuard.destroy();
   }
 }
 
@@ -375,7 +450,7 @@ export interface TacticalMapCockpitProps extends TacticalCockpitConfig {
 /**
  * TacticalMapCockpit React / JSX Functional Component
  * Provides complete binding of MapLibre GL JS, Single-Booth Session, Golden Thread Glow,
- * POI Radar, Dynamic Moon/Sun Lighting, and Tactical Bottom Sheet HUD.
+ * POI Radar, Dynamic Moon/Sun Lighting, Camera Optics, and Tactical Bottom Sheet HUD.
  */
 export function TacticalMapCockpit(props: TacticalMapCockpitProps): {
   readonly controller: TacticalMapCockpitController;

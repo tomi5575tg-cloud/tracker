@@ -147,10 +147,41 @@ Zaawansowany silnik symulacji astronomicznej i dynamicznego oświetlenia 3D dla 
 
 ---
 
-### 8. Integracja z Koordynatorem Sesji (`src/integration/`)
-- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
-  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`) oraz panel taktyczny (`drain`).
+### 8. Automatyczna Optyka Kamery pod Taktyczny HUD (`src/maplibre/cameraOptics.ts`)
+Zaawansowany silnik optyczny eliminujący problem zasłaniania widoku mapy (HUD Occlusion):
+- **Dynamiczne Insety Viewportu (`computeViewportInsets`)**:
+  - Górny pasek Top Bar HUD (64px + 24px safety margin).
+  - Pływający pasek akcji Floating Toolbar (68px + 24px safety margin).
+  - Dynamiczny dolny panel Taktyczny Bottom Sheet (PEEK: 84px, HALF: 45% vh, EXPANDED: 88% vh, HIDDEN: 0px).
+- **Kompensacja Środka Optycznego (`computeOpticalCenterOffset`)**:
+  - Matematyczne przesunięcie punktu skupienia kamery w "Sweet Spot" (niezasłonięte okno apertury mapy).
+- **Adaptacyjne Kadrowanie**:
+  - `framePoi(poi)`: Precyzyjne skupienie na punkcie zainteresowania z zachowaniem strefy buforowej i zbliżenia.
+  - `frameRoute(route)`: Obliczenie otaczającego BBox i wywołanie `fitBounds` ze zbalansowanym paddingiem.
+  - `frameBoundingBox(bbox)` & `frameCoordinates(coordinates)`: Dynamiczne dopasowanie klastrów punktów.
+- **Pancerny Drenaż Optyki (`SessionDrainHook`)**:
+  - Natychmiastowe zatrzymanie trwających animacji kamery (`map.stop()`) i powrót do domyślnego widoku przy wylogowaniu.
+
+---
+
+### 9. Ochrona przed Wyścigami Zapytań (`src/auth/queryRaceGuard.ts`)
+Pancerny mechanizm ochrony przed wyścigami danych (Race Conditions / In-flight Query Superseding):
+- **Monotoniczne Identyfikatory Sekwencji (`queryId`)**:
+  - Każde nowe zapytanie (np. skan radaru, filtr telemetryczny, wyszukiwanie POI) otrzymuje rosnący identyfikator.
+- **Natychmiastowe Anulowanie In-Flight (`AbortController`)**:
+  - Wysłanie nowego zapytania w tym samym kanale automatycznie przerywa wcześniejsze żądania sieciowe/obliczeniowe.
+- **Bariera Zatwierdzania (`Commit Barrier`)**:
+  - Wyniki spóźnionych, nieaktualnych odpowiedzi są bezwzględnie odrzucane, zapobiegając nadpisaniu nowszego stanu.
+- **Pancerny Drenaż Zapytań (`SessionDrainHook`)**:
+  - Błyskawiczny abort wszystkich aktywnych zadań asynchronicznych i wyczyszczenie timerów podczas drenażu śluzy.
+
+---
+
+### 10. Integracja z Koordynatorem Sesji (`src/integration/`)
+- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager`, `TacticalCameraOpticsEngine`, `TacticalQueryRaceGuard` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
+  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`), optykę kamery (`drain`), zapytania (`drain`) oraz panel taktyczny (`drain`).
   - Wyświetlanie POI (`displayPois`) automatycznie respektuje uprawnienia aktywnej sesji.
+  - Wybór punktu `selectPoi` / `onItemSelect` automatycznie kadruje kamerę w sweet spocie HUD.
 
 ---
 
@@ -339,7 +370,7 @@ coordinator.onItemSelect('poi-radar-station', {
 });
 ```
 
-### 6. Główny Widok Kokpitu (React + MapLibre + Tactical HUD)
+### 6. Główny Widok Kokpitu (React + MapLibre + Tactical HUD + Camera Optics)
 
 ```typescript
 import {
@@ -357,8 +388,8 @@ const cockpit = TacticalMapCockpit({
   onItemSelect: (poi) => console.log('Wybrano punkt:', poi?.name),
 });
 
-// Skan radarowy w promieniu 15 km
-cockpit.controller.performRadarScan(15000);
+// Bezpieczny skan radarowy w promieniu 15 km chroniony przed wyścigami zapytań
+await cockpit.controller.performRadarScanSafe(15000);
 
 // Przełączanie oświetlenia noc / dzień
 cockpit.controller.toggleDayNight(12);
@@ -369,7 +400,7 @@ cockpit.controller.toggleDayNight(12);
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 136 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 151 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)

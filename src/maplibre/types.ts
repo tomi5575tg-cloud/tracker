@@ -5,6 +5,7 @@ export interface CameraOptions {
   zoom?: number | undefined;
   bearing?: number | undefined;
   pitch?: number | undefined;
+  padding?: number | { top: number; bottom: number; left: number; right: number } | undefined;
 }
 
 export interface FitBoundsOptions {

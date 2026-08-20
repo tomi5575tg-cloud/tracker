@@ -3,6 +3,8 @@ import type { MapLibreRouteManager, ClearRouteOptions } from '../maplibre/routeM
 import type { MapLibrePoiLayerManager } from '../maplibre/poiLayerManager.js';
 import type { TacticalBottomSheetController } from '../components/TacticalBottomSheet.js';
 import type { DynamicLightingManager } from '../lighting/dynamicLightingManager.js';
+import type { TacticalCameraOpticsEngine } from '../maplibre/cameraOptics.js';
+import type { TacticalQueryRaceGuard } from '../auth/queryRaceGuard.js';
 import type { PoiManager } from '../poi/poiManager.js';
 import type { PoiItem, PoiGeoJsonFeatureCollection } from '../poi/types.js';
 import type { AuthLockBooth } from '../auth/authBooth.js';
@@ -38,6 +40,8 @@ export interface SecureTrackingCoordinatorConfig {
   readonly poiManager?: PoiManager | undefined;
   readonly tacticalBottomSheet?: TacticalBottomSheetController | undefined;
   readonly dynamicLightingManager?: DynamicLightingManager | undefined;
+  readonly cameraOptics?: TacticalCameraOpticsEngine | undefined;
+  readonly queryRaceGuard?: TacticalQueryRaceGuard | undefined;
 }
 
 export class SecureTrackingSessionCoordinator {
@@ -47,6 +51,8 @@ export class SecureTrackingSessionCoordinator {
   private readonly poiManager: PoiManager | undefined;
   private readonly tacticalBottomSheet: TacticalBottomSheetController | undefined;
   private readonly dynamicLightingManager: DynamicLightingManager | undefined;
+  private readonly cameraOptics: TacticalCameraOpticsEngine | undefined;
+  private readonly queryRaceGuard: TacticalQueryRaceGuard | undefined;
   private readonly config: SecureTrackingCoordinatorConfig;
   private unregisterHooks: Array<() => void> = [];
 
@@ -61,6 +67,8 @@ export class SecureTrackingSessionCoordinator {
     this.poiManager = config.poiManager;
     this.tacticalBottomSheet = config.tacticalBottomSheet;
     this.dynamicLightingManager = config.dynamicLightingManager;
+    this.cameraOptics = config.cameraOptics;
+    this.queryRaceGuard = config.queryRaceGuard;
     this.config = config;
     this.setupIntegration();
   }
@@ -92,6 +100,16 @@ export class SecureTrackingSessionCoordinator {
     if (this.dynamicLightingManager) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.dynamicLightingManager));
     }
+
+    // 6. Register Camera Optics Engine drain hook if provided
+    if (this.cameraOptics) {
+      this.unregisterHooks.push(this.authBooth.registerDrainHook(this.cameraOptics));
+    }
+
+    // 7. Register Query Race Guard drain hook if provided
+    if (this.queryRaceGuard) {
+      this.unregisterHooks.push(this.authBooth.registerDrainHook(this.queryRaceGuard));
+    }
   }
 
   /**
@@ -99,7 +117,7 @@ export class SecureTrackingSessionCoordinator {
    * If user is not authorized or session does not match route.userId, rejects with error
    * to strictly enforce Single Booth isolation.
    */
-  public displayRoute(route: RouteData): void {
+  public displayRoute(route: RouteData, autoFrame = true): void {
     const session = this.authBooth.getSession();
     if (!session) {
       throw new Error('Unauthorized: No active session in AuthLockBooth to display route');
@@ -112,6 +130,11 @@ export class SecureTrackingSessionCoordinator {
     }
 
     this.routeManager.setRoute(route);
+
+    if (autoFrame && this.cameraOptics) {
+      const snap = this.tacticalBottomSheet?.getState().snapPoint;
+      this.cameraOptics.frameRoute(route, { bottomSheetSnap: snap });
+    }
   }
 
   /**
@@ -191,8 +214,16 @@ export class SecureTrackingSessionCoordinator {
     return this.dynamicLightingManager;
   }
 
+  public getCameraOptics(): TacticalCameraOpticsEngine | undefined {
+    return this.cameraOptics;
+  }
+
+  public getQueryRaceGuard(): TacticalQueryRaceGuard | undefined {
+    return this.queryRaceGuard;
+  }
+
   /**
-   * Dispatches unified onItemSelect across POI layer manager, tactical bottom sheet and map view.
+   * Dispatches unified onItemSelect across POI layer manager, tactical bottom sheet, optics camera, and map view.
    * Ensures bidirectional synchronization when a user clicks a marker on the map or picks an item in the UI.
    */
   public selectPoi(
@@ -212,14 +243,33 @@ export class SecureTrackingSessionCoordinator {
       resolvedCategory = this.poiManager.getCategoryRegistry().getCategory(resolvedPoi.categoryId) ?? null;
     }
 
-    // 1. Update Map POI Layer selection and camera
+    // 1. Update Map POI Layer selection
     if (this.poiLayerManager) {
-      this.poiLayerManager.selectPoi(resolvedPoi, options);
+      this.poiLayerManager.selectPoi(resolvedPoi, {
+        ...options,
+        centerCamera: false, // delegated to Camera Optics Engine
+      });
     }
 
     // 2. Update Tactical Bottom Sheet Inspector
     if (this.tacticalBottomSheet) {
       this.tacticalBottomSheet.selectPoi(resolvedPoi, resolvedCategory);
+    }
+
+    // 3. Auto-frame camera using Camera Optics Engine if enabled
+    const centerCamera = options.centerCamera ?? true;
+    if (centerCamera && resolvedPoi) {
+      const snap = this.tacticalBottomSheet?.getState().snapPoint;
+      if (this.cameraOptics) {
+        this.cameraOptics.framePoi(resolvedPoi, {
+          targetZoom: options.zoom ?? 15,
+          bottomSheetSnap: snap,
+          durationMs: options.easeDurationMs ?? 800,
+        });
+      } else if (this.poiLayerManager) {
+        // Fallback to basic layer manager camera centering
+        this.poiLayerManager.selectPoi(resolvedPoi, { ...options, centerCamera: true });
+      }
     }
   }
 

@@ -11,6 +11,7 @@ export * from './auth/mutex.js';
 export * from './auth/storage.js';
 export * from './auth/drainManager.js';
 export * from './auth/authBooth.js';
+export * from './auth/queryRaceGuard.js';
 
 // Mobile Startup Auth Gate
 export * from './auth/mobileTypes.js';
@@ -21,6 +22,7 @@ export * from './maplibre/types.js';
 export * from './maplibre/expressions.js';
 export * from './maplibre/geoJsonAdapter.js';
 export * from './maplibre/glowLayers.js';
+export * from './maplibre/cameraOptics.js';
 export * from './maplibre/routeManager.js';
 export * from './maplibre/poiLayerManager.js';
 
@@ -50,3 +52,4 @@ export * from './lighting/dynamicLightingManager.js';
 
 // Integration Coordinator
 export * from './integration/coordinator.js';
+

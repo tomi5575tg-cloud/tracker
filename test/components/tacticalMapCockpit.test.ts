@@ -220,11 +220,15 @@ describe('TacticalMapCockpit (Spięcie w Głównym Widoku Kokpitu React + MapLib
 
     expect(onSelectSpy).toHaveBeenCalledWith(samplePoi);
 
-    // Camera centered on POI
-    expect(mockMap.cameraEaseParams).toEqual({
+    // Camera centered on POI with HUD-compensated optical insets
+    expect(mockMap.cameraEaseParams).toMatchObject({
       center: [21.0122, 52.2297],
       zoom: 15,
       duration: 800,
+      padding: expect.objectContaining({
+        top: expect.any(Number),
+        bottom: expect.any(Number),
+      }),
     });
 
     // GPU featureState updated
