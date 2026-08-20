@@ -44,15 +44,22 @@ export class SessionDrainManager {
     this.abortController = new AbortController();
 
     // 3. Execute all hooks with individual protection
+    const errors: Error[] = [];
     const hookPromises = Array.from(this.hooks).map(async (hook) => {
       try {
         await hook.drain(reason, previousSession);
       } catch (error) {
-        // Log or isolate error without failing other drainers
-        console.error(`[SessionDrainManager] Error during drain hook execution:`, error);
+        errors.push(error instanceof Error ? error : new Error(String(error)));
       }
     });
 
     await Promise.all(hookPromises);
+
+    if (errors.length > 0) {
+      throw new AggregateError(
+        errors,
+        `Session drain incomplete: ${errors.length} hook(s) failed (${reason})`
+      );
+    }
   }
 }

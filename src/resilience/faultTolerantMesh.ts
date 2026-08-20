@@ -47,6 +47,7 @@ export class FaultTolerantMeshSupervisor implements SessionDrainHook {
   private currentHeading = 0;
   private currentZoom = 13;
   private isWebGLHealthy = true;
+  private lastEmergencyPaintOk = false;
 
   constructor(config: MeshSupervisorConfig = {}) {
     this.config = config;
@@ -126,6 +127,7 @@ export class FaultTolerantMeshSupervisor implements SessionDrainHook {
    */
   public reportWebGlContextLoss(reason = 'WEBGL_CONTEXT_LOST'): void {
     this.isWebGLHealthy = false;
+    this.lastEmergencyPaintOk = false;
     this.reportSubsystemHealth('MAP_RENDERER', 'DEGRADED', 'EMERGENCY_2D_CANVAS', reason);
   }
 
@@ -178,7 +180,19 @@ export class FaultTolerantMeshSupervisor implements SessionDrainHook {
    */
   public renderEmergencySvg(width = 800, height = 600): string {
     const frame = this.getEmergencyFrame(width, height);
-    return this.emergencyRenderer.renderSvgFrame(frame);
+    const svg = this.emergencyRenderer.renderSvgFrame(frame);
+    if (svg.includes('<svg')) {
+      this.markEmergencyPaintSucceeded();
+    }
+    return svg;
+  }
+
+  /**
+   * Evidence that a fallback surface actually painted. isScreenSafe is false
+   * after WebGL loss until this is called.
+   */
+  public markEmergencyPaintSucceeded(): void {
+    this.lastEmergencyPaintOk = true;
   }
 
   /**
@@ -196,10 +210,12 @@ export class FaultTolerantMeshSupervisor implements SessionDrainHook {
       activeTelemetryChannel = 'LOCAL_OFFLINE_BUFFER';
     }
 
+    const screenSafe = this.isWebGLHealthy || this.lastEmergencyPaintOk;
+
     return {
       overallLevel: this.currentLevel,
-      isScreenSafe: true, // Guarantees screen is ALWAYS available
-      isNavigationActive: true,
+      isScreenSafe: screenSafe,
+      isNavigationActive: drState.extrapolationConfidencePct > 0 || !drState.isExtrapolating,
       deadReckoning: drState,
       activeRenderer: isRendererDegraded ? 'EMERGENCY_2D_CANVAS' : 'MAPLIBRE_WEBGL',
       activeTelemetryChannel,
@@ -215,6 +231,8 @@ export class FaultTolerantMeshSupervisor implements SessionDrainHook {
     this.deadReckoning.drain(reason, previousSession);
     this.currentRoute = null;
     this.currentPois = [];
+    this.isWebGLHealthy = true;
+    this.lastEmergencyPaintOk = false;
     this.initializeSubsystemReports();
     this.currentLevel = 'LEVEL_0_NOMINAL';
   }
@@ -229,11 +247,17 @@ export class FaultTolerantMeshSupervisor implements SessionDrainHook {
     const render = this.subsystemReports.get('MAP_RENDERER')?.status;
     const net = this.subsystemReports.get('NETWORK_TELEMETRY')?.status;
 
-    if (render === 'FAILED' || render === 'DEGRADED' || !this.isWebGLHealthy) {
+    const gpsDown = gps === 'FAILED' || gps === 'DEGRADED' || this.deadReckoning.getState().isExtrapolating;
+    const renderDown = render === 'FAILED' || render === 'DEGRADED' || !this.isWebGLHealthy;
+    const netDown = net === 'FAILED' || net === 'DEGRADED';
+
+    if (renderDown && gpsDown && netDown) {
+      this.currentLevel = 'LEVEL_4_TOTAL_BLACKOUT';
+    } else if (renderDown) {
       this.currentLevel = 'LEVEL_3_MAP_RENDER_LOST';
-    } else if (gps === 'FAILED' || gps === 'DEGRADED' || this.deadReckoning.getState().isExtrapolating) {
+    } else if (gpsDown) {
       this.currentLevel = 'LEVEL_2_GPS_LOST';
-    } else if (net === 'FAILED' || net === 'DEGRADED') {
+    } else if (netDown) {
       this.currentLevel = 'LEVEL_1_NETWORK_DEGRADED';
     } else {
       this.currentLevel = 'LEVEL_0_NOMINAL';

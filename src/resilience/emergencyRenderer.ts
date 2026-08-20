@@ -1,5 +1,5 @@
-import type { Position } from '../geojson/types.js';
 import type { EmergencyRenderFrame } from './types.js';
+import { projectLonLatToScreen } from '../pixel/projection.js';
 
 export interface EmergencyRendererConfig {
   readonly canvasElement?: HTMLCanvasElement | undefined;
@@ -21,35 +21,48 @@ export interface EmergencyRendererConfig {
  * 4. Ultra-low overhead, zero WebGL dependency.
  */
 export class EmergencyRenderer {
-  private readonly config: Required<EmergencyRendererConfig>;
+  private canvasElement: HTMLCanvasElement | undefined;
+  private readonly defaultWidth: number;
+  private readonly defaultHeight: number;
+  private readonly neonThemeAccent: string;
 
   constructor(config: EmergencyRendererConfig = {}) {
-    this.config = {
-      canvasElement: config.canvasElement ?? undefined as any,
-      defaultWidth: config.defaultWidth ?? 800,
-      defaultHeight: config.defaultHeight ?? 600,
-      neonThemeAccent: config.neonThemeAccent ?? '#00F0FF',
-    };
+    this.canvasElement = config.canvasElement;
+    this.defaultWidth = config.defaultWidth ?? 800;
+    this.defaultHeight = config.defaultHeight ?? 600;
+    this.neonThemeAccent = config.neonThemeAccent ?? '#00F0FF';
+  }
+
+  public getCanvasElement(): HTMLCanvasElement | undefined {
+    return this.canvasElement;
+  }
+
+  public attachCanvas(canvas: HTMLCanvasElement): void {
+    this.canvasElement = canvas;
+  }
+
+  public detachCanvas(): void {
+    this.canvasElement = undefined;
   }
 
   /**
    * Generates a complete standalone SVG vector frame representation of the emergency HUD map.
    */
   public renderSvgFrame(frame: EmergencyRenderFrame): string {
-    const w: number = frame.width || (this.config.defaultWidth ?? 800);
-    const h: number = frame.height || (this.config.defaultHeight ?? 600);
+    const w: number = frame.width || this.defaultWidth;
+    const h: number = frame.height || this.defaultHeight;
     const center = frame.center;
     const currentPos = frame.currentPosition;
     const zoom = frame.zoom;
 
-    const currentPx = this.lonLatToScreen(currentPos, center, zoom, w, h);
+    const currentPx = projectLonLatToScreen(currentPos, center, zoom, w, h);
 
     // Render active route polyline if present
     let routeSvg = '';
     if (frame.activeRoute && frame.activeRoute.waypoints.length > 1) {
       const pts = frame.activeRoute.waypoints.map((wp) => {
-        const [px, py] = this.lonLatToScreen(wp.coordinate, center, zoom, w, h);
-        return `${px.toFixed(1)},${py.toFixed(1)}`;
+        const point = projectLonLatToScreen(wp.coordinate, center, zoom, w, h);
+        return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
       });
       const pointsAttr = pts.join(' ');
       routeSvg = `
@@ -62,11 +75,11 @@ export class EmergencyRenderer {
     // Render POIs
     let poisSvg = '';
     for (const poi of frame.nearbyPois) {
-      const [px, py] = this.lonLatToScreen(poi.coordinate, center, zoom, w, h);
-      if (px >= 0 && px <= w && py >= 0 && py <= h) {
+      const point = projectLonLatToScreen(poi.coordinate, center, zoom, w, h);
+      if (point.x >= 0 && point.x <= w && point.y >= 0 && point.y <= h) {
         poisSvg += `
-          <circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="6" fill="#00F0FF" stroke="#FFFFFF" stroke-width="1.5" opacity="0.9" />
-          <text x="${px.toFixed(1)}" y="${(py + 14).toFixed(1)}" fill="#00F0FF" font-family="monospace" font-size="10" text-anchor="middle">${poi.name}</text>
+          <circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="6" fill="${this.neonThemeAccent}" stroke="#FFFFFF" stroke-width="1.5" opacity="0.9" />
+          <text x="${point.x.toFixed(1)}" y="${(point.y + 14).toFixed(1)}" fill="${this.neonThemeAccent}" font-family="monospace" font-size="10" text-anchor="middle">${poi.name}</text>
         `;
       }
     }
@@ -74,7 +87,7 @@ export class EmergencyRenderer {
     // Vehicle Reticle (Arrow/Cone with Dead Reckoning indicator)
     const reticleColor = frame.isDeadReckoning ? '#FF9100' : '#00FF9F';
     const reticlePulse = frame.isDeadReckoning
-      ? `<circle cx="${currentPx[0].toFixed(1)}" cy="${currentPx[1].toFixed(1)}" r="18" fill="none" stroke="#FF9100" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.8" />`
+      ? `<circle cx="${currentPx.x.toFixed(1)}" cy="${currentPx.y.toFixed(1)}" r="18" fill="none" stroke="#FF9100" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.8" />`
       : '';
 
     return `
@@ -98,7 +111,7 @@ export class EmergencyRenderer {
   ${poisSvg}
 
   <!-- Vehicle Position & Heading Arrow -->
-  <g transform="translate(${currentPx[0].toFixed(1)}, ${currentPx[1].toFixed(1)}) rotate(${frame.heading})">
+  <g transform="translate(${currentPx.x.toFixed(1)}, ${currentPx.y.toFixed(1)}) rotate(${frame.heading})">
     <polygon points="0,-14 9,10 0,5 -9,10" fill="${reticleColor}" stroke="#FFFFFF" stroke-width="1.5" />
   </g>
   ${reticlePulse}
@@ -115,23 +128,29 @@ export class EmergencyRenderer {
 
   /**
    * Renders the emergency frame onto an HTML5 2D Canvas context.
+   * Throws if a 2D context cannot be acquired — never leaves a black pane silently.
    */
   public renderToCanvas(canvas: HTMLCanvasElement, frame: EmergencyRenderFrame): void {
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-      return;
+      throw new Error('EmergencyRenderer: canvas.getContext("2d") returned null');
     }
 
-    const w = canvas.width;
-    const h = canvas.height;
+    const w = canvas.width || frame.width || this.defaultWidth;
+    const h = canvas.height || frame.height || this.defaultHeight;
+    if (canvas.width === 0) {
+      canvas.width = w;
+    }
+    if (canvas.height === 0) {
+      canvas.height = h;
+    }
     const center = frame.center;
     const zoom = frame.zoom;
 
-    // 1. Background
+    ctx.globalAlpha = 1;
     ctx.fillStyle = '#05070D';
     ctx.fillRect(0, 0, w, h);
 
-    // 2. Tactical Grid
     ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
     ctx.lineWidth = 1;
     const step = 40;
@@ -148,17 +167,17 @@ export class EmergencyRenderer {
       ctx.stroke();
     }
 
-    // 3. Route
     if (frame.activeRoute && frame.activeRoute.waypoints.length > 1) {
       ctx.beginPath();
       frame.activeRoute.waypoints.forEach((wp, idx) => {
-        const [px, py] = this.lonLatToScreen(wp.coordinate, center, zoom, w, h);
-        if (idx === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+        const point = projectLonLatToScreen(wp.coordinate, center, zoom, w, h);
+        if (idx === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
       });
       ctx.strokeStyle = '#FFA726';
       ctx.lineWidth = 8;
       ctx.globalAlpha = 0.3;
+      ctx.lineCap = 'round';
       ctx.stroke();
 
       ctx.strokeStyle = '#FFD700';
@@ -172,10 +191,21 @@ export class EmergencyRenderer {
       ctx.stroke();
     }
 
-    // 4. Vehicle reticle
-    const [vx, vy] = this.lonLatToScreen(frame.currentPosition, center, zoom, w, h);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'center';
+    for (const poi of frame.nearbyPois) {
+      const point = projectLonLatToScreen(poi.coordinate, center, zoom, w, h);
+      ctx.fillStyle = this.neonThemeAccent;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '10px monospace';
+      ctx.fillText(poi.name, point.x, point.y + 14);
+    }
+
+    const vehicle = projectLonLatToScreen(frame.currentPosition, center, zoom, w, h);
     ctx.save();
-    ctx.translate(vx, vy);
+    ctx.translate(vehicle.x, vehicle.y);
     ctx.rotate((frame.heading * Math.PI) / 180);
     ctx.fillStyle = frame.isDeadReckoning ? '#FF9100' : '#00FF9F';
     ctx.beginPath();
@@ -190,7 +220,7 @@ export class EmergencyRenderer {
     ctx.stroke();
     ctx.restore();
 
-    // 5. Emergency Banner
+    ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(11, 15, 25, 0.9)';
     ctx.strokeStyle = 'rgba(255, 145, 0, 0.5)';
     ctx.lineWidth = 1;
@@ -209,30 +239,5 @@ export class EmergencyRenderer {
       46,
       36
     );
-  }
-
-  private lonLatToScreen(
-    coord: Position,
-    center: Position,
-    zoom: number,
-    screenWidth: number,
-    screenHeight: number
-  ): [x: number, y: number] {
-    const scale = Math.pow(2, zoom) * 128;
-    const [lon, lat] = coord;
-    const [cLon, cLat] = center;
-
-    const radLat = (lat * Math.PI) / 180;
-    const radCLat = (cLat * Math.PI) / 180;
-
-    const x = ((lon - cLon) * Math.PI) / 180;
-    const y =
-      Math.log(Math.tan(Math.PI / 4 + radLat / 2)) -
-      Math.log(Math.tan(Math.PI / 4 + radCLat / 2));
-
-    const screenX = screenWidth / 2 + x * scale;
-    const screenY = screenHeight / 2 - y * scale;
-
-    return [screenX, screenY];
   }
 }

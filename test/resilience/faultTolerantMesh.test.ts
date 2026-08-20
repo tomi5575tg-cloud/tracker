@@ -39,12 +39,13 @@ describe('FaultTolerantMeshSupervisor', () => {
     const summary = mesh.getStatusSummary();
     expect(summary.overallLevel).toBe('LEVEL_3_MAP_RENDER_LOST');
     expect(summary.activeRenderer).toBe('EMERGENCY_2D_CANVAS');
-    expect(summary.isScreenSafe).toBe(true);
+    expect(summary.isScreenSafe).toBe(false);
 
     // Verify emergency SVG can still be rendered effortlessly
     const svg = mesh.renderEmergencySvg(800, 600);
     expect(svg).toContain('LEVEL_3_MAP_RENDER_LOST');
     expect(svg).toContain('<svg');
+    expect(mesh.getStatusSummary().isScreenSafe).toBe(true);
 
     // Restore WebGL
     mesh.reportWebGlContextRestored();
@@ -58,5 +59,17 @@ describe('FaultTolerantMeshSupervisor', () => {
     mesh.drain('SESSION_LOGOUT');
 
     expect(mesh.getStatusSummary().overallLevel).toBe('LEVEL_0_NOMINAL');
+  });
+
+  it('reaches LEVEL_4_TOTAL_BLACKOUT only when GPS, renderer and network are all down', () => {
+    const mesh = new FaultTolerantMeshSupervisor();
+    mesh.reportGpsLoss('TUNNEL');
+    mesh.reportWebGlContextLoss('GPU');
+    mesh.reportSubsystemHealth('NETWORK_TELEMETRY', 'FAILED', 'RADIO_SILENCE', 'NO_LINK');
+
+    expect(mesh.getStatusSummary().overallLevel).toBe('LEVEL_4_TOTAL_BLACKOUT');
+    const svg = mesh.renderEmergencySvg(400, 300);
+    expect(svg).toContain('<svg');
+    expect(mesh.getStatusSummary().isScreenSafe).toBe(true);
   });
 });

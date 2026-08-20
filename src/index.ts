@@ -54,9 +54,23 @@ export * from './edge/supabaseBridge.js';
 
 // Fault-Tolerant Mesh & Graceful Degradation Navigation
 export * from './resilience/types.js';
+export * from './resilience/circuitBreaker.js';
 export * from './resilience/deadReckoningEngine.js';
 export * from './resilience/emergencyRenderer.js';
 export * from './resilience/faultTolerantMesh.js';
+
+export * from './hardware/types.js';
+export * from './hardware/simulatedGnssPort.js';
+export * from './hardware/browserGnssPort.js';
+export * from './hardware/manualInertialPort.js';
+export * from './hardware/telemetryBus.js';
+
+export * from './pixel/projection.js';
+export * from './pixel/frameBuffer.js';
+
+export * from './weld/errors.js';
+export * from './weld/hardwareToPixelPipeline.js';
+export * from './weld/bindWebGlLoss.js';
 
 // Tactical UI Components
 export * from './components/TacticalBottomSheet.js';

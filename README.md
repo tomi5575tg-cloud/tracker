@@ -1,3 +1,17 @@
+# Tracker — od żelaznej bazy sprzętowej po ostatni piksel w kabinie
+
+Jedna rama, bez magii i bez cichego połykania błędów: GNSS/IMU → **Śluza (Zasada Jednej Kabiny)** → siatka degradacji → RFC 7946 GeoJSON → piksele MapLibre albo awaryjny Canvas 2D. Każda spoina ma audyt (`WeldAudit`); utrata WebGL nie zostawia czarnego ekranu.
+
+```bash
+npm ci
+npm test
+npm run cockpit
+```
+
+Kabina deweloperska: `http://localhost:5173`. W VM bez odbiornika GNSS szyna jawnie przełącza się na `SIMULATED` — HUD nie udaje żywego fixa.
+
+---
+
 # Tracker — Śluza Logowania, Drenaż Sesji, Kontrakt POI, Matryca Uprawnień, Generator Zapytań Przestrzennych i Lekki Adapter MapLibre GL JS
 
 Pancerna, modularna implementacja architektury bezpieczeństwa sesji, wizualizacji telemetrycznej, punktów zainteresowania (POI), kontroli dostępu, silnika geodezyjnego oraz lekkiego adaptera GeoJSON dla MapLibre GL JS w oparciu o:

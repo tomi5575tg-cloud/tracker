@@ -46,6 +46,7 @@ export class DeadReckoningEngine implements SessionDrainHook {
   private lastExtrapolationTimestamp: number;
   private totalExtrapolatedMeters = 0;
   private isExtrapolating = false;
+  private lastState: DeadReckoningState;
 
   constructor(
     initialPosition: Position = [21.0122, 52.2297],
@@ -66,6 +67,7 @@ export class DeadReckoningEngine implements SessionDrainHook {
     this.lastKnownHeadingDeg = 0;
     this.currentSpeedKmh = 0;
     this.currentHeadingDeg = 0;
+    this.lastState = this.snapshot(now);
   }
 
   /**
@@ -93,6 +95,7 @@ export class DeadReckoningEngine implements SessionDrainHook {
 
     this.totalExtrapolatedMeters = 0;
     this.isExtrapolating = false;
+    this.lastState = this.snapshot(timestamp);
   }
 
   /**
@@ -149,22 +152,16 @@ export class DeadReckoningEngine implements SessionDrainHook {
 
     this.lastExtrapolationTimestamp = currentTime;
 
-    const confidencePct = this.calculateConfidence(elapsedSinceGps);
-
-    return {
-      estimatedCoordinate: [this.currentEstimatedPosition[0], this.currentEstimatedPosition[1]],
-      lastKnownGpsCoordinate: [this.lastGpsPosition[0], this.lastGpsPosition[1]],
-      currentSpeedKmh: Number(this.currentSpeedKmh.toFixed(1)),
-      currentHeadingDeg: Number(this.currentHeadingDeg.toFixed(1)),
-      extrapolationConfidencePct: confidencePct,
-      extrapolatedDurationMs: this.isExtrapolating ? elapsedSinceGps : 0,
-      totalExtrapolatedDistanceMeters: Number(this.totalExtrapolatedMeters.toFixed(1)),
-      isExtrapolating: this.isExtrapolating,
-    };
+    this.lastState = this.snapshot(currentTime);
+    return this.lastState;
   }
 
+  /**
+   * Returns the last computed snapshot. Does not advance against wall clock —
+   * call tick(now) to step kinematics.
+   */
   public getState(): DeadReckoningState {
-    return this.tick(Date.now());
+    return this.lastState;
   }
 
   /**
@@ -182,6 +179,7 @@ export class DeadReckoningEngine implements SessionDrainHook {
     this.currentHeadingDeg = 0;
     this.totalExtrapolatedMeters = 0;
     this.isExtrapolating = false;
+    this.lastState = this.snapshot(now);
   }
 
   /**
@@ -195,6 +193,20 @@ export class DeadReckoningEngine implements SessionDrainHook {
     this.reset();
   }
 
+  private snapshot(at: number): DeadReckoningState {
+    const elapsedSinceGps = Math.max(0, at - this.lastGpsTimestamp);
+    return {
+      estimatedCoordinate: [this.currentEstimatedPosition[0], this.currentEstimatedPosition[1]],
+      lastKnownGpsCoordinate: [this.lastGpsPosition[0], this.lastGpsPosition[1]],
+      currentSpeedKmh: Number(this.currentSpeedKmh.toFixed(1)),
+      currentHeadingDeg: Number(this.currentHeadingDeg.toFixed(1)),
+      extrapolationConfidencePct: this.calculateConfidence(elapsedSinceGps),
+      extrapolatedDurationMs: this.isExtrapolating ? elapsedSinceGps : 0,
+      totalExtrapolatedDistanceMeters: Number(this.totalExtrapolatedMeters.toFixed(1)),
+      isExtrapolating: this.isExtrapolating,
+    };
+  }
+
   private calculateConfidence(elapsedSinceGpsMs: number): number {
     const lossTimeout = this.config.gpsLossTimeoutMs ?? 2500;
     if (elapsedSinceGpsMs < lossTimeout) {
@@ -202,6 +214,6 @@ export class DeadReckoningEngine implements SessionDrainHook {
     }
     const maxDur = this.config.maxExtrapolationDurationMs ?? 180000;
     const remainingRatio = Math.max(0, 1 - (elapsedSinceGpsMs - lossTimeout) / maxDur);
-    return Math.round(remainingRatio * 90); // max 90% during dead reckoning, down to 0%
+    return Math.round(remainingRatio * 90);
   }
 }
