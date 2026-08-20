@@ -1,0 +1,30 @@
+{
+  "name": "tracker",
+  "version": "1.0.0",
+  "description": "Pancerna implementacja Sluzy Logowania (Zasada Jednej Kabiny) oraz Drenazu Sesji (clearRoute) pod TypeScript, MapLibre GL JS i RFC 7946 GeoJSON",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "mantrap",
+    "single-booth",
+    "session-drain",
+    "clear-route",
+    "maplibre-gl",
+    "geojson",
+    "rfc7946",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "dependencies": {}
+}
