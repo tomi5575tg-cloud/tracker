@@ -17,8 +17,7 @@ import type { MapLibreMapInstance } from '../src/maplibre/types.js';
 import type { WeldAudit } from '../src/weld/hardwareToPixelPipeline.js';
 import type { GnssSourceKind } from '../src/hardware/types.js';
 import type { RouteData } from '../src/types.js';
-import { getTacticalAdvice } from '../src/tactical/advice.js';
-import type { TacticalAdvice } from '../src/tactical/types.js';
+import { useCopilotAgent } from './useCopilotAgent.js';
 
 const WARSAW: [number, number] = [21.0122, 52.2297];
 
@@ -61,7 +60,9 @@ export function CockpitApp() {
   const [cabinState, setCabinState] = useState('EMPTY');
   const [hardwareNote, setHardwareNote] = useState('inicjalizacja szyny sprzętowej…');
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [advice, setAdvice] = useState<TacticalAdvice | null>(null);
+  const { advice, source: copilotSource, networkState, requestAdvice } = useCopilotAgent();
+  const requestAdviceRef = useRef(requestAdvice);
+  requestAdviceRef.current = requestAdvice;
   const pipelineRef = useRef<HardwareToPixelPipeline | null>(null);
   const boothRef = useRef<AuthLockBooth | null>(null);
   const busRef = useRef<HardwareTelemetryBus | null>(null);
@@ -145,16 +146,12 @@ export function CockpitApp() {
             center: [next.coordinate[0], next.coordinate[1]],
             bearing: next.vehicleGeoJson.properties.headingDeg,
           });
-          void getTacticalAdvice({
+          void requestAdviceRef.current({
             currentCoords: fix.coordinate,
             speed: fix.speedKmh ?? 0,
             isNight: isNightDuty(new Date()),
             hgvProfile: DEMO_HGV,
             nextManeuver: { type: 'STRAIGHT', distanceMeters: 4000 },
-          }).then((nextAdvice) => {
-            if (!cancelled) {
-              setAdvice(nextAdvice);
-            }
           });
         },
         onError: (error) => {
@@ -271,7 +268,7 @@ export function CockpitApp() {
         )}
         {advice && (
           <div className={`advice advice-${advice.priority.toLowerCase()}`}>
-            {advice.priority} · {advice.headline}
+            {copilotSource === 'LOCAL_EMERGENCY_INJECTION' ? 'WTRYSK LOKALNY' : 'CHMURA'} · {networkState} · {advice.priority} · {advice.headline}
           </div>
         )}
         {errorText && <div className="hud-error">{errorText}</div>}

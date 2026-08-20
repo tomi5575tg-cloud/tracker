@@ -130,8 +130,8 @@ function pickWinner(advisories: readonly TacticalAdvisory[]): TacticalAdvisory {
 
 /**
  * Deterministic HGV tactical advisor for the cabin HUD.
- * Async so a future edge/model hop can replace the body without changing the contract —
- * this implementation does not call a model and does not invent missing gauge data.
+ * Awaryjny wtrysk taktyczny w useCopilotAgent.js przy braku sieci —
+ * nie woła modelu i nie zgaduje brakującej skrajni.
  */
 export const getTacticalAdvice = async ({
   currentCoords,

@@ -74,6 +74,7 @@ export * from './weld/bindWebGlLoss.js';
 
 export * from './tactical/types.js';
 export * from './tactical/advice.js';
+export * from './tactical/copilotAgent.js';
 
 // Tactical UI Components
 export * from './components/TacticalBottomSheet.js';
