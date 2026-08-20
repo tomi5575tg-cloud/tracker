@@ -5,6 +5,8 @@ import type { TacticalBottomSheetController } from '../components/TacticalBottom
 import type { DynamicLightingManager } from '../lighting/dynamicLightingManager.js';
 import type { TacticalCameraOpticsEngine } from '../maplibre/cameraOptics.js';
 import type { TacticalQueryRaceGuard } from '../auth/queryRaceGuard.js';
+import type { TacticalTileCacheManager } from '../offline/tileCacheManager.js';
+import type { TacticalServiceWorkerHandler } from '../offline/serviceWorkerHandler.js';
 import type { PoiManager } from '../poi/poiManager.js';
 import type { PoiItem, PoiGeoJsonFeatureCollection } from '../poi/types.js';
 import type { AuthLockBooth } from '../auth/authBooth.js';
@@ -42,6 +44,8 @@ export interface SecureTrackingCoordinatorConfig {
   readonly dynamicLightingManager?: DynamicLightingManager | undefined;
   readonly cameraOptics?: TacticalCameraOpticsEngine | undefined;
   readonly queryRaceGuard?: TacticalQueryRaceGuard | undefined;
+  readonly tileCacheManager?: TacticalTileCacheManager | undefined;
+  readonly serviceWorkerHandler?: TacticalServiceWorkerHandler | undefined;
 }
 
 export class SecureTrackingSessionCoordinator {
@@ -53,6 +57,8 @@ export class SecureTrackingSessionCoordinator {
   private readonly dynamicLightingManager: DynamicLightingManager | undefined;
   private readonly cameraOptics: TacticalCameraOpticsEngine | undefined;
   private readonly queryRaceGuard: TacticalQueryRaceGuard | undefined;
+  private readonly tileCacheManager: TacticalTileCacheManager | undefined;
+  private readonly serviceWorkerHandler: TacticalServiceWorkerHandler | undefined;
   private readonly config: SecureTrackingCoordinatorConfig;
   private unregisterHooks: Array<() => void> = [];
 
@@ -69,6 +75,8 @@ export class SecureTrackingSessionCoordinator {
     this.dynamicLightingManager = config.dynamicLightingManager;
     this.cameraOptics = config.cameraOptics;
     this.queryRaceGuard = config.queryRaceGuard;
+    this.tileCacheManager = config.tileCacheManager;
+    this.serviceWorkerHandler = config.serviceWorkerHandler;
     this.config = config;
     this.setupIntegration();
   }
@@ -110,6 +118,16 @@ export class SecureTrackingSessionCoordinator {
     if (this.queryRaceGuard) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.queryRaceGuard));
     }
+
+    // 8. Register Tile Cache Manager drain hook if provided
+    if (this.tileCacheManager) {
+      this.unregisterHooks.push(this.authBooth.registerDrainHook(this.tileCacheManager));
+    }
+
+    // 9. Register Service Worker Handler drain hook if provided
+    if (this.serviceWorkerHandler) {
+      this.unregisterHooks.push(this.authBooth.registerDrainHook(this.serviceWorkerHandler));
+    }
   }
 
   /**
@@ -130,6 +148,11 @@ export class SecureTrackingSessionCoordinator {
     }
 
     this.routeManager.setRoute(route);
+
+    // Sync active route with Service Worker fallback for offline Golden Thread tiles
+    if (this.serviceWorkerHandler) {
+      this.serviceWorkerHandler.getGoldenThreadFallback().setActiveRoute(route);
+    }
 
     if (autoFrame && this.cameraOptics) {
       const snap = this.tacticalBottomSheet?.getState().snapPoint;
@@ -181,6 +204,7 @@ export class SecureTrackingSessionCoordinator {
    */
   public clearRoute(options?: ClearRouteOptions): void {
     this.routeManager.clearRoute(options ?? this.config.clearRouteOptions);
+    this.serviceWorkerHandler?.getGoldenThreadFallback().setActiveRoute(null);
   }
 
   /**
@@ -220,6 +244,14 @@ export class SecureTrackingSessionCoordinator {
 
   public getQueryRaceGuard(): TacticalQueryRaceGuard | undefined {
     return this.queryRaceGuard;
+  }
+
+  public getTileCacheManager(): TacticalTileCacheManager | undefined {
+    return this.tileCacheManager;
+  }
+
+  public getServiceWorkerHandler(): TacticalServiceWorkerHandler | undefined {
+    return this.serviceWorkerHandler;
   }
 
   /**

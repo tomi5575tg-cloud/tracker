@@ -177,9 +177,27 @@ Pancerny mechanizm ochrony przed wyścigami danych (Race Conditions / In-flight 
 
 ---
 
-### 10. Integracja z Koordynatorem Sesji (`src/integration/`)
-- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager`, `TacticalCameraOpticsEngine`, `TacticalQueryRaceGuard` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
-  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`), optykę kamery (`drain`), zapytania (`drain`) oraz panel taktyczny (`drain`).
+### 10. Pancerny Service Worker & Bufor Kafelków Offline (`src/offline/`)
+Wysokowydajny podsystem buforowania kafelków rastrowych/wektorowych oraz dynamicznego fallbacku dla Złotej Nitki:
+- **Menedżer Bufora Kafelków (`TacticalTileCacheManager`)**:
+  - Pamięć podręczna LRU z ograniczeniem wagowym (`maxCacheBytes`) oraz liczbowym (`maxEntries`).
+  - Precyzyjne parsowanie kluczy kafelków (`{z}/{x}/{y}`) oraz standardowych adresów URL kafelków slippy map.
+  - Formuły geodezyjne przeliczające `lonLatToTile` oraz `tileToLonLatBounds`.
+  - Pełna integracja z `SessionDrainHook` (natychmiastowe czyszczenie pamięci kafelków przy wylogowaniu).
+- **Dynamiczny Fallback Złotej Nitki (`GoldenThreadOfflineFallback`)**:
+  - Matematyczne wyliczanie przecięcia odcinków trajektorii trasy z granicami kafelków.
+  - Dynamiczny generator syntetycznych kafelków SVG z zachowaniem neonowego blasku Złotej Nitki (Outer Glow, Mid Radiant, Core White-Gold Thread).
+  - Generowanie taktycznej siatki Cyberpunk Grid z koordynatami kafelków w warunkach braku połączenia sieciowego (radio silence).
+  - Metoda `pregenerateRouteTiles` buforująca kafelki wzdłuż całej trasy dla poziomów zoomu 10–14.
+- **Interception Service Workera (`TacticalServiceWorkerHandler`)**:
+  - Strategia Cache-First z transparentnym fallbackiem sieciowym.
+  - Automatyczna generacja i buforowanie syntetycznego kafelka w przypadku błędów sieciowych / trybu offline.
+
+---
+
+### 11. Integracja z Koordynatorem Sesji (`src/integration/`)
+- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager`, `TacticalCameraOpticsEngine`, `TacticalQueryRaceGuard`, `TacticalTileCacheManager`, `TacticalServiceWorkerHandler` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
+  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`), optykę kamery (`drain`), zapytania (`drain`), bufor kafelków (`drain`) oraz panel taktyczny (`drain`).
   - Wyświetlanie POI (`displayPois`) automatycznie respektuje uprawnienia aktywnej sesji.
   - Wybór punktu `selectPoi` / `onItemSelect` automatycznie kadruje kamerę w sweet spocie HUD.
 
@@ -207,9 +225,14 @@ src/
 │   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS, oświetlenia 3D i zdarzeń
 │   ├── expressions.ts        # Helper wyrażeń stylów (feature-state, match, interpolate)
 │   ├── glowLayers.ts         # Warstwy neonowej poświaty (Złota Nitka + Punkty Radaru POI)
+│   ├── cameraOptics.ts       # Automatyczna Optyka Kamery pod HUD (Insets, Sweet Spot)
 │   ├── geoJsonAdapter.ts     # Lekki Adapter GeoJSON z cyklem życia i drenażem
 │   ├── routeManager.ts       # Zarządzanie trasami i procedura clearRoute
 │   └── poiLayerManager.ts    # Zarządzanie warstwami POI i procedura clearPoi
+├── offline/
+│   ├── tileCacheManager.ts   # Menedżer bufora kafelków LRU i obliczeń geodezyjnych slippy map
+│   ├── goldenThreadFallback.ts # Dynamiczny generator syntetycznych kafelków SVG dla Złotej Nitki
+│   └── serviceWorkerHandler.ts # Interceptor żądań kafelkowych Cache-First / Offline Fallback
 ├── spatial/
 │   ├── types.ts              # Definicje typów zapytań przestrzennych (BBox, Radius, Corridor)
 │   ├── geoUtils.ts           # Obliczenia geodezyjne (Haversine, DestinationPoint, Poligony)
@@ -400,7 +423,7 @@ cockpit.controller.toggleDayNight(12);
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 151 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 160 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)

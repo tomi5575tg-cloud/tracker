@@ -41,6 +41,11 @@ export * from './spatial/geoUtils.js';
 export * from './spatial/queryGenerator.js';
 export * from './spatial/spatialIndex.js';
 
+// Offline Tile Cache & Golden Thread Fallback Service Worker
+export * from './offline/tileCacheManager.js';
+export * from './offline/goldenThreadFallback.js';
+export * from './offline/serviceWorkerHandler.js';
+
 // Tactical UI Components
 export * from './components/TacticalBottomSheet.js';
 export * from './components/TacticalMapCockpit.js';

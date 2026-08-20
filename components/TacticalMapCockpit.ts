@@ -9,6 +9,8 @@ import { PoiManager } from '../src/poi/poiManager.js';
 import { DynamicLightingManager } from '../src/lighting/dynamicLightingManager.js';
 import { TacticalCameraOpticsEngine, type TacticalHudInsetsConfig } from '../src/maplibre/cameraOptics.js';
 import { TacticalQueryRaceGuard } from '../src/auth/queryRaceGuard.js';
+import { TacticalTileCacheManager } from '../src/offline/tileCacheManager.js';
+import { TacticalServiceWorkerHandler } from '../src/offline/serviceWorkerHandler.js';
 import type { DynamicLightingState } from '../src/lighting/types.js';
 import {
   TacticalBottomSheetController,
@@ -28,6 +30,8 @@ export interface TacticalCockpitConfig {
   readonly tacticalBottomSheet?: TacticalBottomSheetController | undefined;
   readonly cameraOptics?: TacticalCameraOpticsEngine | undefined;
   readonly queryRaceGuard?: TacticalQueryRaceGuard | undefined;
+  readonly tileCacheManager?: TacticalTileCacheManager | undefined;
+  readonly serviceWorkerHandler?: TacticalServiceWorkerHandler | undefined;
   readonly insetsConfig?: TacticalHudInsetsConfig | undefined;
   readonly initialCenter?: Position | undefined;
   readonly initialZoom?: number | undefined;
@@ -86,7 +90,7 @@ export const TACTICAL_COCKPIT_TAILWIND_CLASSES = Object.freeze({
  * TacticalMapCockpitController:
  * High-performance orchestrator wiring MapLibre GL JS, Single-Booth Auth Lock,
  * Golden Thread Route Glow, POI Radar Points, Dynamic Moon/Sun Lighting,
- * Spatial Query Radar, Tactical Camera Optics and Bottom Sheet into a unified HUD cockpit.
+ * Spatial Query Radar, Tactical Camera Optics, Tile Cache & Offline Service Worker into a unified HUD cockpit.
  */
 export class TacticalMapCockpitController {
   private readonly map: MapLibreMapInstance;
@@ -98,6 +102,8 @@ export class TacticalMapCockpitController {
   private readonly tacticalBottomSheet: TacticalBottomSheetController;
   private readonly cameraOptics: TacticalCameraOpticsEngine;
   private readonly queryRaceGuard: TacticalQueryRaceGuard;
+  private readonly tileCacheManager: TacticalTileCacheManager;
+  private readonly serviceWorkerHandler: TacticalServiceWorkerHandler;
   private readonly coordinator: SecureTrackingSessionCoordinator;
   private readonly config: TacticalCockpitConfig;
 
@@ -118,6 +124,12 @@ export class TacticalMapCockpitController {
     this.poiManager = config.poiManager ?? new PoiManager({ authBooth: this.authBooth });
     this.poiLayerManager = config.poiLayerManager ?? new MapLibrePoiLayerManager(this.map);
     this.queryRaceGuard = config.queryRaceGuard ?? new TacticalQueryRaceGuard();
+    this.tileCacheManager = config.tileCacheManager ?? new TacticalTileCacheManager();
+    this.serviceWorkerHandler =
+      config.serviceWorkerHandler ??
+      new TacticalServiceWorkerHandler({
+        tileCacheManager: this.tileCacheManager,
+      });
 
     this.dynamicLightingManager =
       config.dynamicLightingManager ??
@@ -155,6 +167,8 @@ export class TacticalMapCockpitController {
       dynamicLightingManager: this.dynamicLightingManager,
       cameraOptics: this.cameraOptics,
       queryRaceGuard: this.queryRaceGuard,
+      tileCacheManager: this.tileCacheManager,
+      serviceWorkerHandler: this.serviceWorkerHandler,
     });
 
     // 3. Apply Neon Glow Layers (Złota Nitka + Punkty Radaru POI) if enabled
@@ -210,6 +224,14 @@ export class TacticalMapCockpitController {
 
   public getQueryRaceGuard(): TacticalQueryRaceGuard {
     return this.queryRaceGuard;
+  }
+
+  public getTileCacheManager(): TacticalTileCacheManager {
+    return this.tileCacheManager;
+  }
+
+  public getServiceWorkerHandler(): TacticalServiceWorkerHandler {
+    return this.serviceWorkerHandler;
   }
 
   /**
@@ -322,7 +344,7 @@ export class TacticalMapCockpitController {
   }
 
   /**
-   * Triggers panic session drain (clears map, POIs, route, HUD, queries, and locks booth)
+   * Triggers panic session drain (clears map, POIs, route, HUD, queries, tile cache, and locks booth)
    */
   public async triggerPanicDrain(reason = 'COCKPIT_PANIC_DRAIN'): Promise<void> {
     await this.authBooth.exitBooth(reason);
@@ -439,6 +461,8 @@ export class TacticalMapCockpitController {
     this.tacticalBottomSheet.destroy();
     this.cameraOptics.destroy();
     this.queryRaceGuard.destroy();
+    this.tileCacheManager.destroy();
+    this.serviceWorkerHandler.destroy();
   }
 }
 
@@ -450,7 +474,7 @@ export interface TacticalMapCockpitProps extends TacticalCockpitConfig {
 /**
  * TacticalMapCockpit React / JSX Functional Component
  * Provides complete binding of MapLibre GL JS, Single-Booth Session, Golden Thread Glow,
- * POI Radar, Dynamic Moon/Sun Lighting, Camera Optics, and Tactical Bottom Sheet HUD.
+ * POI Radar, Dynamic Moon/Sun Lighting, Camera Optics, Tile Cache & Offline Service Worker, and Tactical Bottom Sheet HUD.
  */
 export function TacticalMapCockpit(props: TacticalMapCockpitProps): {
   readonly controller: TacticalMapCockpitController;
