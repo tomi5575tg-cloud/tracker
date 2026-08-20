@@ -9,6 +9,7 @@ import type { TacticalQueryRaceGuard } from '../auth/queryRaceGuard.js';
 import type { TacticalTileCacheManager } from '../offline/tileCacheManager.js';
 import type { TacticalServiceWorkerHandler } from '../offline/serviceWorkerHandler.js';
 import type { SupabaseTelemetryBridgeHandler } from '../edge/supabaseBridge.js';
+import type { FaultTolerantMeshSupervisor } from '../resilience/faultTolerantMesh.js';
 import type { PoiManager } from '../poi/poiManager.js';
 import type { PoiItem, PoiGeoJsonFeatureCollection } from '../poi/types.js';
 import type { AuthLockBooth } from '../auth/authBooth.js';
@@ -50,6 +51,7 @@ export interface SecureTrackingCoordinatorConfig {
   readonly tileCacheManager?: TacticalTileCacheManager | undefined;
   readonly serviceWorkerHandler?: TacticalServiceWorkerHandler | undefined;
   readonly telemetryBridge?: SupabaseTelemetryBridgeHandler | undefined;
+  readonly faultMeshSupervisor?: FaultTolerantMeshSupervisor | undefined;
 }
 
 export class SecureTrackingSessionCoordinator {
@@ -65,6 +67,7 @@ export class SecureTrackingSessionCoordinator {
   private readonly tileCacheManager: TacticalTileCacheManager | undefined;
   private readonly serviceWorkerHandler: TacticalServiceWorkerHandler | undefined;
   private readonly telemetryBridge: SupabaseTelemetryBridgeHandler | undefined;
+  private readonly faultMeshSupervisor: FaultTolerantMeshSupervisor | undefined;
   private readonly config: SecureTrackingCoordinatorConfig;
   private unregisterHooks: Array<() => void> = [];
 
@@ -85,6 +88,7 @@ export class SecureTrackingSessionCoordinator {
     this.tileCacheManager = config.tileCacheManager;
     this.serviceWorkerHandler = config.serviceWorkerHandler;
     this.telemetryBridge = config.telemetryBridge;
+    this.faultMeshSupervisor = config.faultMeshSupervisor;
     this.config = config;
     this.setupIntegration();
   }
@@ -146,6 +150,11 @@ export class SecureTrackingSessionCoordinator {
     if (this.telemetryBridge) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.telemetryBridge));
     }
+
+    // 12. Register Fault Tolerant Mesh Supervisor drain hook if provided
+    if (this.faultMeshSupervisor) {
+      this.unregisterHooks.push(this.authBooth.registerDrainHook(this.faultMeshSupervisor));
+    }
   }
 
   /**
@@ -170,6 +179,11 @@ export class SecureTrackingSessionCoordinator {
     // Sync active route with Service Worker fallback for offline Golden Thread tiles
     if (this.serviceWorkerHandler) {
       this.serviceWorkerHandler.getGoldenThreadFallback().setActiveRoute(route);
+    }
+
+    // Sync with Fault-Tolerant Mesh Supervisor for emergency 2D rendering & navigation
+    if (this.faultMeshSupervisor) {
+      this.faultMeshSupervisor.setActiveRoute(route);
     }
 
     if (autoFrame && this.cameraOptics) {
@@ -199,6 +213,10 @@ export class SecureTrackingSessionCoordinator {
       categories: categoryMap,
       permissionsEngine,
     });
+
+    if (this.faultMeshSupervisor) {
+      this.faultMeshSupervisor.setNearbyPois(pois);
+    }
   }
 
   /**
@@ -223,6 +241,7 @@ export class SecureTrackingSessionCoordinator {
   public clearRoute(options?: ClearRouteOptions): void {
     this.routeManager.clearRoute(options ?? this.config.clearRouteOptions);
     this.serviceWorkerHandler?.getGoldenThreadFallback().setActiveRoute(null);
+    this.faultMeshSupervisor?.setActiveRoute(null);
   }
 
   /**
@@ -231,6 +250,7 @@ export class SecureTrackingSessionCoordinator {
   public clearPois(): void {
     this.poiLayerManager?.clearPoi();
     this.poiManager?.clear();
+    this.faultMeshSupervisor?.setNearbyPois([]);
   }
 
   /**
@@ -278,6 +298,10 @@ export class SecureTrackingSessionCoordinator {
 
   public getTelemetryBridge(): SupabaseTelemetryBridgeHandler | undefined {
     return this.telemetryBridge;
+  }
+
+  public getFaultMeshSupervisor(): FaultTolerantMeshSupervisor | undefined {
+    return this.faultMeshSupervisor;
   }
 
   /**
@@ -351,3 +375,4 @@ export class SecureTrackingSessionCoordinator {
     this.unregisterHooks = [];
   }
 }
+

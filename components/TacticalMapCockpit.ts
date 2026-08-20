@@ -13,6 +13,7 @@ import { TacticalQueryRaceGuard } from '../src/auth/queryRaceGuard.js';
 import { TacticalTileCacheManager } from '../src/offline/tileCacheManager.js';
 import { TacticalServiceWorkerHandler } from '../src/offline/serviceWorkerHandler.js';
 import { SupabaseTelemetryBridgeHandler } from '../src/edge/supabaseBridge.js';
+import { FaultTolerantMeshSupervisor } from '../src/resilience/faultTolerantMesh.js';
 import type { DynamicLightingState } from '../src/lighting/types.js';
 import {
   TacticalBottomSheetController,
@@ -36,6 +37,7 @@ export interface TacticalCockpitConfig {
   readonly tileCacheManager?: TacticalTileCacheManager | undefined;
   readonly serviceWorkerHandler?: TacticalServiceWorkerHandler | undefined;
   readonly telemetryBridge?: SupabaseTelemetryBridgeHandler | undefined;
+  readonly faultMeshSupervisor?: FaultTolerantMeshSupervisor | undefined;
   readonly insetsConfig?: TacticalHudInsetsConfig | undefined;
   readonly initialCenter?: Position | undefined;
   readonly initialZoom?: number | undefined;
@@ -111,6 +113,7 @@ export class TacticalMapCockpitController {
   private readonly tileCacheManager: TacticalTileCacheManager;
   private readonly serviceWorkerHandler: TacticalServiceWorkerHandler;
   private readonly telemetryBridge: SupabaseTelemetryBridgeHandler;
+  private readonly faultMeshSupervisor: FaultTolerantMeshSupervisor;
   private readonly coordinator: SecureTrackingSessionCoordinator;
   private readonly config: TacticalCockpitConfig;
 
@@ -146,6 +149,12 @@ export class TacticalMapCockpitController {
           this.displayRoute(route);
           this.tacticalBottomSheet.setRoute(route);
         },
+      });
+
+    this.faultMeshSupervisor =
+      config.faultMeshSupervisor ??
+      new FaultTolerantMeshSupervisor({
+        initialPosition: this.currentCenter,
       });
 
     this.dynamicLightingManager =
@@ -208,6 +217,7 @@ export class TacticalMapCockpitController {
       tileCacheManager: this.tileCacheManager,
       serviceWorkerHandler: this.serviceWorkerHandler,
       telemetryBridge: this.telemetryBridge,
+      faultMeshSupervisor: this.faultMeshSupervisor,
     });
 
     // 3. Apply Neon Glow Layers (Złota Nitka + Punkty Radaru POI) if enabled
@@ -279,6 +289,10 @@ export class TacticalMapCockpitController {
 
   public getTelemetryBridge(): SupabaseTelemetryBridgeHandler {
     return this.telemetryBridge;
+  }
+
+  public getFaultMeshSupervisor(): FaultTolerantMeshSupervisor {
+    return this.faultMeshSupervisor;
   }
 
   /**
@@ -515,6 +529,7 @@ export class TacticalMapCockpitController {
     this.tileCacheManager.destroy();
     this.serviceWorkerHandler.destroy();
     this.telemetryBridge.destroy();
+    this.faultMeshSupervisor.destroy();
   }
 }
 

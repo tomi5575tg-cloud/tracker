@@ -234,9 +234,27 @@ Wysokowydajny most telemetryczny łączący sprzętowy Turbo Boost z chmurowym s
 
 ---
 
-### 12. Integracja z Koordynatorem Sesji (`src/integration/`)
-- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager`, `AutonomousSolarStyleManager`, `TacticalCameraOpticsEngine`, `TacticalQueryRaceGuard`, `TacticalTileCacheManager`, `TacticalServiceWorkerHandler`, `SupabaseTelemetryBridgeHandler` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
-  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`), optykę kamery (`drain`), zapytania (`drain`), bufor kafelków (`drain`), most telemetryczny (`drain`) oraz panel taktyczny (`drain`).
+### 12. Architektura Odporna na Awarie (Fault-Tolerant Mesh & Graceful Degradation — `src/resilience/`)
+Pancerny system eliminacji pojedynczych punktów awarii (SPOF Screen & Navigation Protection):
+- **Główny Nadzorca Siatki (`FaultTolerantMeshSupervisor`)**:
+  - `LEVEL_0_NOMINAL`: Wszystkie podsystemy w normie (WebGL 3D, live GPS, chmura AI, aktywne kafelki).
+  - `LEVEL_1_NETWORK_DEGRADED`: Awaria sieci chmurowej $\rightarrow$ przełączenie na lokalny bufor telemetryczny i pokładowe reguły.
+  - `LEVEL_2_GPS_LOST`: Utrata sygnału GNSS / wjazd do tunelu $\rightarrow$ natychmiastowa aktywacja nawigacji zliczeniowej (Dead Reckoning).
+  - `LEVEL_3_MAP_RENDER_LOST`: Awaria WebGL / utrata kontekstu GPU $\rightarrow$ natychmiastowy fallback na 2D Emergency Vector HUD Canvas / SVG (ekran nigdy nie gaśnie).
+  - `LEVEL_4_TOTAL_BLACKOUT`: Całkowita izolacja sensoryczna $\rightarrow$ autonomiczna macierz taktyczna Dead Reckoning.
+- **Silnik Nawigacji Zliczeniowej (`DeadReckoningEngine`)**:
+  - Kinematyczna ekstrapolacja współrzędnych geograficznych wzdłuż azymutu z uwzględnieniem formuł ortodromicznych WGS84 (`destinationPoint`).
+  - Fuzja sensorów IMU (żyroskopowy yaw rate, akcelerometr) oraz modelowanie spadku pewności (confidence decay).
+  - Płynne pojednanie i zerowanie błędu ekstrapolacji po odzyskaniu sygnału GPS.
+- **Awaryjny Renderer Wektorowy (`EmergencyRenderer`)**:
+  - Samodzielne renderowanie widoku taktycznego na Canvas 2D lub w postaci wektorowego SVG.
+  - Rysowanie Złotej Nitki, retikulum pozycji pojazdu (z pulsem Dead Reckoning), punktów POI i banera diagnostycznego degradacji.
+
+---
+
+### 13. Integracja z Koordynatorem Sesji (`src/integration/`)
+- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager`, `AutonomousSolarStyleManager`, `TacticalCameraOpticsEngine`, `TacticalQueryRaceGuard`, `TacticalTileCacheManager`, `TacticalServiceWorkerHandler`, `SupabaseTelemetryBridgeHandler`, `FaultTolerantMeshSupervisor` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
+  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`), optykę kamery (`drain`), zapytania (`drain`), bufor kafelków (`drain`), most telemetryczny (`drain`), nadzorcę siatki (`drain`) oraz panel taktyczny (`drain`).
   - Wyświetlanie POI (`displayPois`) automatycznie respektuje uprawnienia aktywnej sesji.
   - Wybór punktu `selectPoi` / `onItemSelect` automatycznie kadruje kamerę w sweet spocie HUD.
 
@@ -278,6 +296,11 @@ src/
 │   ├── adaptiveSampler.ts    # Adaptacyjne próbkowanie i dawkowanie mocy (Power Throttling)
 │   ├── aiTierEngine.ts       # Silnik skalowania analizy AI (Tier 0 - Tier 4)
 │   └── supabaseBridge.ts     # Most telemetryczny dla Supabase Edge Functions (RFC 7946 GeoJSON)
+├── resilience/
+│   ├── types.ts              # Typy siatki odpornej na awarie (Fault-Tolerant Mesh & Graceful Degradation)
+│   ├── deadReckoningEngine.ts# Nawigacja zliczeniowa (Dead Reckoning & Inertial Extrapolation)
+│   ├── emergencyRenderer.ts  # Awaryjny renderer Canvas 2D / SVG chroniący przed zgaśnięciem ekranu
+│   └── faultTolerantMesh.ts  # Główny nadzorca siatki odpornej na awarie (Supervisor & Health Matrix)
 ├── spatial/
 │   ├── types.ts              # Definicje typów zapytań przestrzennych (BBox, Radius, Corridor)
 │   ├── geoUtils.ts           # Obliczenia geodezyjne (Haversine, DestinationPoint, Poligony)
@@ -468,7 +491,7 @@ cockpit.controller.toggleDayNight(12);
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 171 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 180 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)

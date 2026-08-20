@@ -52,6 +52,12 @@ export * from './edge/adaptiveSampler.js';
 export * from './edge/aiTierEngine.js';
 export * from './edge/supabaseBridge.js';
 
+// Fault-Tolerant Mesh & Graceful Degradation Navigation
+export * from './resilience/types.js';
+export * from './resilience/deadReckoningEngine.js';
+export * from './resilience/emergencyRenderer.js';
+export * from './resilience/faultTolerantMesh.js';
+
 // Tactical UI Components
 export * from './components/TacticalBottomSheet.js';
 export * from './components/TacticalMapCockpit.js';
