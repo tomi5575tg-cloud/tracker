@@ -15,6 +15,12 @@ import {
 } from './TacticalBottomSheet.js';
 import { SecureTrackingSessionCoordinator } from '../src/integration/coordinator.js';
 import { applyNeonGlowLayers } from '../lib/mapGlowLayers.js';
+import { FaultTolerantMeshSupervisor } from '../src/mesh/meshSupervisor.js';
+import {
+  DegradationLevel,
+  ScreenRenderMode,
+  PositioningSource,
+} from '../src/mesh/types.js';
 
 export interface TacticalCockpitConfig {
   readonly map: MapLibreMapInstance;
@@ -24,6 +30,7 @@ export interface TacticalCockpitConfig {
   readonly poiManager?: PoiManager | undefined;
   readonly dynamicLightingManager?: DynamicLightingManager | undefined;
   readonly tacticalBottomSheet?: TacticalBottomSheetController | undefined;
+  readonly meshSupervisor?: FaultTolerantMeshSupervisor | undefined;
   readonly initialCenter?: Position | undefined;
   readonly initialZoom?: number | undefined;
   readonly enableNeonGlow?: boolean | undefined;
@@ -40,6 +47,11 @@ export interface CockpitTopBarViewModel {
   readonly celestialPhaseName: string;
   readonly liveGpsConnected: boolean;
   readonly clockTimeFormatted: string;
+  readonly degradationLevel: DegradationLevel;
+  readonly degradationLevelName: string;
+  readonly isMeshHealthy: boolean;
+  readonly screenRenderMode: ScreenRenderMode;
+  readonly isSurvivalMode: boolean;
 }
 
 export interface TacticalCockpitViewModel {
@@ -91,6 +103,7 @@ export class TacticalMapCockpitController {
   private readonly poiManager: PoiManager;
   private readonly dynamicLightingManager: DynamicLightingManager;
   private readonly tacticalBottomSheet: TacticalBottomSheetController;
+  private readonly meshSupervisor: FaultTolerantMeshSupervisor;
   private readonly coordinator: SecureTrackingSessionCoordinator;
   private readonly config: TacticalCockpitConfig;
 
@@ -110,6 +123,12 @@ export class TacticalMapCockpitController {
     this.routeManager = config.routeManager ?? new MapLibreRouteManager(this.map);
     this.poiManager = config.poiManager ?? new PoiManager({ authBooth: this.authBooth });
     this.poiLayerManager = config.poiLayerManager ?? new MapLibrePoiLayerManager(this.map);
+    this.meshSupervisor =
+      config.meshSupervisor ??
+      new FaultTolerantMeshSupervisor({
+        initialCenter: this.currentCenter,
+        safeHavenPosition: this.currentCenter,
+      });
 
     this.dynamicLightingManager =
       config.dynamicLightingManager ??
@@ -134,6 +153,7 @@ export class TacticalMapCockpitController {
       poiManager: this.poiManager,
       tacticalBottomSheet: this.tacticalBottomSheet,
       dynamicLightingManager: this.dynamicLightingManager,
+      meshSupervisor: this.meshSupervisor,
     });
 
     // 3. Apply Neon Glow Layers (Złota Nitka + Punkty Radaru POI) if enabled
@@ -149,6 +169,10 @@ export class TacticalMapCockpitController {
 
   public getCoordinator(): SecureTrackingSessionCoordinator {
     return this.coordinator;
+  }
+
+  public getMeshSupervisor(): FaultTolerantMeshSupervisor {
+    return this.meshSupervisor;
   }
 
   public getCenter(): Position {
@@ -208,6 +232,7 @@ export class TacticalMapCockpitController {
   public displayRoute(route: RouteData): void {
     this.coordinator.displayRoute(route);
     this.tacticalBottomSheet.setRoute(route);
+    this.meshSupervisor.setRoute(route);
   }
 
   /**
@@ -252,8 +277,23 @@ export class TacticalMapCockpitController {
    * Triggers panic session drain (clears map, POIs, route, HUD and locks booth)
    */
   public async triggerPanicDrain(reason = 'COCKPIT_PANIC_DRAIN'): Promise<void> {
+    this.meshSupervisor.triggerEmergencySafeMode(reason);
     await this.authBooth.exitBooth(reason);
     this.config.onSessionDrain?.(reason);
+  }
+
+  /**
+   * Triggers manual emergency safe mode (Zero-Black-Screen survival mode)
+   */
+  public triggerEmergencySafeMode(reason = 'MANUAL_EMERGENCY_OVERRIDE'): void {
+    this.meshSupervisor.triggerEmergencySafeMode(reason);
+  }
+
+  /**
+   * Triggers self-healing recovery across all mesh subsystems
+   */
+  public triggerSelfHealingRecovery(): void {
+    this.meshSupervisor.triggerSelfHealingRecovery();
   }
 
   /**
@@ -263,6 +303,16 @@ export class TacticalMapCockpitController {
     const session = this.authBooth.getSession();
     const lighting = this.dynamicLightingManager.getState();
     const sheetState = this.tacticalBottomSheet.getState();
+    const meshSummary = this.meshSupervisor.getHealthSummary();
+    const degLevel = meshSummary.overallDegradationLevel;
+    const degNames = [
+      'OPTIMAL (L0)',
+      'DEGRADED ONLINE (L1)',
+      'OFFLINE CACHED (L2)',
+      'DEGRADED FALLBACK (L3)',
+      'CRITICAL SURVIVAL (L4)',
+    ];
+    const renderMode = this.meshSupervisor.getScreenGuardian().getRenderMode();
 
     const topBar: CockpitTopBarViewModel = {
       sessionUsername: session?.username ?? 'NIEZALOGOWANY',
@@ -274,12 +324,17 @@ export class TacticalMapCockpitController {
         lighting.dominantBody === 'SUN'
           ? lighting.sun.phase.replace(/_/g, ' ')
           : lighting.moon.phaseName.replace(/_/g, ' '),
-      liveGpsConnected: true,
+      liveGpsConnected: degLevel <= DegradationLevel.DEGRADED_ONLINE,
       clockTimeFormatted: new Date(lighting.timestamp).toLocaleTimeString('pl-PL', {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
       }),
+      degradationLevel: degLevel,
+      degradationLevelName: degNames[degLevel] ?? 'UNKNOWN',
+      isMeshHealthy: meshSummary.isFullyOperational,
+      screenRenderMode: renderMode,
+      isSurvivalMode: meshSummary.isSurvivalMode,
     };
 
     return {
@@ -300,11 +355,43 @@ export class TacticalMapCockpitController {
     const vm = this.getViewModel();
     const c = TACTICAL_COCKPIT_TAILWIND_CLASSES;
     const bottomSheetHtml = this.tacticalBottomSheet.renderHtml();
+    const renderMode = this.meshSupervisor.getScreenGuardian().getRenderMode();
+
+    // If WebGL is not the active render mode, generate fallback canvas / SVG / emergency HUD
+    let mapLayerHtml = `<div id="maplibre-cockpit-canvas" class="${c.mapContainer}"></div>`;
+    if (renderMode !== ScreenRenderMode.WEBGL_VECTOR) {
+      const renderData = {
+        currentFix: {
+          position: this.currentCenter,
+          speedKmh: 45,
+          headingDegrees: 90,
+          accuracyMeters: 5,
+          timestamp: Date.now(),
+          source: PositioningSource.GPS_STANDARD,
+        },
+        activeRoute: vm.activeRoute,
+        pois: this.poiManager.listPois(),
+        selectedPoi: vm.selectedPoi,
+        selectedCategory: vm.selectedPoiCategory,
+        viewportCenter: this.currentCenter,
+        zoom: this.currentZoom,
+        headingDegrees: 90,
+        degradationLevel: vm.topBar.degradationLevel,
+      };
+      mapLayerHtml = this.meshSupervisor.getScreenGuardian().safeRender(renderData);
+    }
+
+    const degBadgeColor =
+      vm.topBar.degradationLevel === DegradationLevel.OPTIMAL
+        ? 'bg-emerald-950/80 text-emerald-400 border-emerald-500/40'
+        : vm.topBar.degradationLevel <= DegradationLevel.OFFLINE_CACHED
+        ? 'bg-amber-950/80 text-amber-400 border-amber-500/40'
+        : 'bg-rose-950/80 text-rose-400 border-rose-500/40 animate-pulse';
 
     return `
 <div class="${c.root}">
   <!-- Map Canvas Layer -->
-  <div id="maplibre-cockpit-canvas" class="${c.mapContainer}"></div>
+  ${mapLayerHtml}
 
   <!-- HUD Top Bar -->
   <header class="${c.topBarContainer}">
@@ -313,12 +400,16 @@ export class TacticalMapCockpitController {
       <div>
         <div class="${c.topBarTitle}">Tracker HUD Cockpit</div>
         <div class="text-[10px] font-mono text-cyan-400/80">
-          TENANT: <span class="text-slate-200">${vm.topBar.tenantId}</span> | FAZA: <span class="text-cyan-300">${vm.topBar.celestialPhaseName}</span>
+          TENANT: <span class="text-slate-200">${vm.topBar.tenantId}</span> | MESH: <span class="${vm.topBar.isMeshHealthy ? 'text-emerald-300' : 'text-amber-300'}">${vm.topBar.degradationLevelName}</span>
         </div>
       </div>
     </div>
 
     <div class="${c.topBarRightGroup}">
+      <div class="px-2.5 py-1 text-xs font-mono font-semibold rounded-full border ${degBadgeColor} flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full ${vm.topBar.isMeshHealthy ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
+        <span>${vm.topBar.screenRenderMode}</span>
+      </div>
       <div class="${c.topBarSessionBadge}">
         <span class="w-2 h-2 rounded-full ${vm.topBar.isSessionActive ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}"></span>
         <span>${vm.topBar.sessionUsername} (${vm.topBar.sessionRole})</span>

@@ -7,6 +7,7 @@ import type { PoiManager } from '../poi/poiManager.js';
 import type { PoiItem, PoiGeoJsonFeatureCollection } from '../poi/types.js';
 import type { AuthLockBooth } from '../auth/authBooth.js';
 import type { SessionDrainHook } from '../auth/drainManager.js';
+import type { FaultTolerantMeshSupervisor } from '../mesh/meshSupervisor.js';
 
 export interface RouteSessionDrainHookOptions {
   readonly routeManager: MapLibreRouteManager;
@@ -38,6 +39,7 @@ export interface SecureTrackingCoordinatorConfig {
   readonly poiManager?: PoiManager | undefined;
   readonly tacticalBottomSheet?: TacticalBottomSheetController | undefined;
   readonly dynamicLightingManager?: DynamicLightingManager | undefined;
+  readonly meshSupervisor?: FaultTolerantMeshSupervisor | undefined;
 }
 
 export class SecureTrackingSessionCoordinator {
@@ -47,6 +49,7 @@ export class SecureTrackingSessionCoordinator {
   private readonly poiManager: PoiManager | undefined;
   private readonly tacticalBottomSheet: TacticalBottomSheetController | undefined;
   private readonly dynamicLightingManager: DynamicLightingManager | undefined;
+  private readonly meshSupervisor: FaultTolerantMeshSupervisor | undefined;
   private readonly config: SecureTrackingCoordinatorConfig;
   private unregisterHooks: Array<() => void> = [];
 
@@ -61,6 +64,7 @@ export class SecureTrackingSessionCoordinator {
     this.poiManager = config.poiManager;
     this.tacticalBottomSheet = config.tacticalBottomSheet;
     this.dynamicLightingManager = config.dynamicLightingManager;
+    this.meshSupervisor = config.meshSupervisor;
     this.config = config;
     this.setupIntegration();
   }
@@ -92,6 +96,17 @@ export class SecureTrackingSessionCoordinator {
     if (this.dynamicLightingManager) {
       this.unregisterHooks.push(this.authBooth.registerDrainHook(this.dynamicLightingManager));
     }
+
+    // 6. Register Mesh Supervisor drain hook if provided
+    if (this.meshSupervisor) {
+      this.unregisterHooks.push(
+        this.authBooth.registerDrainHook({
+          drain: (_reason) => {
+            this.meshSupervisor?.setRoute(null);
+          },
+        })
+      );
+    }
   }
 
   /**
@@ -112,6 +127,7 @@ export class SecureTrackingSessionCoordinator {
     }
 
     this.routeManager.setRoute(route);
+    this.meshSupervisor?.setRoute(route);
   }
 
   /**
@@ -189,6 +205,10 @@ export class SecureTrackingSessionCoordinator {
 
   public getDynamicLightingManager(): DynamicLightingManager | undefined {
     return this.dynamicLightingManager;
+  }
+
+  public getMeshSupervisor(): FaultTolerantMeshSupervisor | undefined {
+    return this.meshSupervisor;
   }
 
   /**

@@ -1,7 +1,20 @@
-# Tracker — Śluza Logowania, Drenaż Sesji, Kontrakt POI, Matryca Uprawnień, Generator Zapytań Przestrzennych i Lekki Adapter MapLibre GL JS
+# Tracker — Architektura Odporna na Awarie (Fault-Tolerant Mesh), Śluza Logowania, Drenaż Sesji, Kontrakt POI, Matryca Uprawnień, Generator Zapytań Przestrzennych i Lekki Adapter MapLibre GL JS
 
-Pancerna, modularna implementacja architektury bezpieczeństwa sesji, wizualizacji telemetrycznej, punktów zainteresowania (POI), kontroli dostępu, silnika geodezyjnego oraz lekkiego adaptera GeoJSON dla MapLibre GL JS w oparciu o:
+Pancerna, modularna implementacja architektury bezpieczeństwa sesji, odporności na awarie (Fault-Tolerant Mesh), wizualizacji telemetrycznej, punktów zainteresowania (POI), kontroli dostępu, silnika geodezyjnego oraz lekkiego adaptera GeoJSON dla MapLibre GL JS w oparciu o:
 - **TypeScript** (Strict Mode, `exactOptionalPropertyTypes`, 100% type-safe)
+- **Architektura Odporna na Awarie (Fault-Tolerant Mesh)**: Eliminacja pojedynczego punktu awarii (Zero SPOF) dla wszystkich 8 krytycznych podsystemów (`POSITIONING`, `RENDERING`, `ROUTING`, `LIGHTING`, `CONNECTIVITY`, `POI_DISCOVERY`, `AUTH_SESSION`, `UI_CONTROLS`)
+- **Graceful Degradation (5 Poziomów Kontrolowanej Degradacji)**:
+  - `Level 0: OPTIMAL` — Pełna akceleracja sprzętowa WebGL GPU, GPS RTK/Standard, routing chmurowy online, oświetlenie efemerydalne 3D
+  - `Level 1: DEGRADED_ONLINE` — Fluktuacje sieciowe, fallback do HTTP polling, throttled render, bezpośredni azymut geodezyjny
+  - `Level 2: OFFLINE_CACHED` — Całkowita utrata łączności, praca na lokalnym indeksie przestrzennym, pamięć podręczna tras, bufor telemetryczny store-and-forward
+  - `Level 3: DEGRADED_FALLBACK` — Awaria WebGL / utrata sygnału GPS, fallback do Canvas 2D / SVG Vector, estymacja Dead Reckoning
+  - `Level 4: CRITICAL_SURVIVAL` — Tryb awaryjny (Survival Mode), zero-crash guarantee, High-Contrast Emergency HUD, ekran NIGDY nie gaśnie
+- **Wielopoziomowy Łańcuch Zastępczy (`FallbackChain<TInput, TOutput>`) & Circuit Breaker**: Ochrona przed kaskadowymi awariami, automatyczny fallback, izolacja błędów i samoleczenie (Self-Healing)
+- **Strażnik Ekranu (`ScreenGuardian`)**: Gwarancja braku czarnego ekranu (Zero Black Screen Guarantee) — automatyczny fallback WebGL GPU ➔ Canvas 2D ➔ SVG Vector Radar ➔ High-Contrast Text Emergency HUD
+- **Zliczanie Martwe Telemetrii (`TelemetryDeadReckoning`)**: Płynna ekstrapolacja pozycji po zaniku sygnału GPS na sferze WGS84 z uwzględnieniem tarcia prędkości, wzrostu promienia niepewności oraz dociągania do korytarza trasy
+- **Zdegradowany Silnik Nawigacji (`DegradedNavigationEngine`)**: Płynne przełączanie między nawigacją korytarzową, bezpośrednim azymutem geodezyjnym (Great-Circle Bearing), boją Dead Reckoning a bazą bezpieczeństwa (Safe Haven)
+- **Priorytetowy Bufor Offline Mesh (`OfflineTelemetryMeshBuffer`)**: Kolejka store-and-forward z gwarantowanymi slotami dla alarmów krytycznych (`EMERGENCY_CRITICAL`), kompaktowaniem telemetrii i odtwarzaniem po powrocie sieci
+- **Nadzorca Siatki Odpornościowej (`FaultTolerantMeshSupervisor`)**: Centralny orkiestrator monitorujący macierz zdrowia, pętle watchdog i integrujący kokpit HUD
 - **Lekki Adapter GeoJSON dla MapLibre GL JS** (`MapLibreGeoJsonAdapter`, `MapLibreExpressions`, zarządzanie cyklem życia warstw, buforowanie/debouncing, interaktywny `feature-state` i zdarzenia `onFeatureClick`/`onFeatureHover`)
 - **Generator Zapytań Przestrzennych & Indeks Przestrzenny** (Bounding Box, Radius / Bufor kołowy, Korytarz trasy, Poligony, wzory Haversine i rzutowanie wektorowe)
 - **Wielobazowy Eksport Zapytań** (PostGIS `ST_MakeEnvelope` / `ST_DWithin`, MongoDB `$geoWithin` / `$centerSphere`, SQLite bounding box, URL Query Params, RFC 7946 Polygon)
@@ -14,7 +27,52 @@ Pancerna, modularna implementacja architektury bezpieczeństwa sesji, wizualizac
 
 ## Główne Moduły i Koncepcje
 
-### 1. Neonowa Poświata na Mapie (Złota Nitka + Punkty Radaru POI — `lib/mapGlowLayers.ts` & `src/maplibre/glowLayers.ts`)
+### 1. Architektura Odporna na Awarie (Fault-Tolerant Mesh & Graceful Degradation)
+Centralny system odporności eliminujący pojedyncze punkty awarii (SPOF) w misjach telemetrycznych i nawigacyjnych:
+
+- **5 Poziomów Degradacji (`DegradationLevel`)**:
+  - `OPTIMAL (0)`: Pełna sprawność wszystkich modułów online i GPU.
+  - `DEGRADED_ONLINE (1)`: Zwiększone opóźnienia sieciowe, przejście na zapytania bezpośrednie.
+  - `OFFLINE_CACHED (2)`: Praca 100% offline z pamięci podręcznej i bufora telemetrycznego.
+  - `DEGRADED_FALLBACK (3)`: Awaria WebGL lub brak sygnału GPS — aktywacja 2D Canvas / SVG i estymacji Dead Reckoning.
+  - `CRITICAL_SURVIVAL (4)`: Ekstremalny tryb awaryjny o zerowym ryzyku awarii (Zero Crash Policy) z interfejsem tekstowym High-Contrast HUD.
+
+- **Wielopoziomowy Łańcuch Zastępczy (`FallbackChain<TInput, TOutput>`)**:
+  - Rejestracja kolejnych poziomów wykonawczych (Tier 0 ➔ Tier 1 ➔ Tier 2 ➔ Ultimate Survival Handler).
+  - Każdy poziom zabezpieczony własnym bezpiecznikiem `CircuitBreaker` (stany `CLOSED`, `OPEN`, `HALF_OPEN`), limitami czasu (`timeoutMs`) i kryteriami dostępności.
+  - Bezpieczne wywołanie — błędy są przechwytywane do łańcucha diagnostycznego `errorChain`, a sterowanie natychmiast przekazywane do kolejnego poziomu bez rzucania niespójnych wyjątków.
+
+- **Strażnik Ekranu (`ScreenGuardian` — Zero Black Screen Guarantee)**:
+  - Ekran NIGDY nie ma prawa zgasnąć podczas nawigacji.
+  - Dynamiczny monitoring kontekstu WebGL (`webglcontextlost` / `webglcontextrestored`), pętli renderowania oraz wskaźnika FPS i heartbeat.
+  - Wielopoziomowe renderowanie: `WEBGL_VECTOR` ➔ `CANVAS_2D` ➔ `SVG_VECTOR` ➔ `TEXT_EMERGENCY_HUD`.
+
+- **Estymacja Pozycji i Zliczanie Martwe (`TelemetryDeadReckoning`)**:
+  - Płynne podtrzymanie pozycji telemetrycznej po utracie sygnału GPS.
+  - Kinematyczne całkowanie prędkości z uwzględnieniem współczynnika zaniku/tarcia (`velocityDecayFactorPerSec`).
+  - Dociąganie estymacji do zdefiniowanego korytarza trasy (`ROUTE_SNAPPED`).
+  - Kontrolowana ekspansja promienia niepewności pozycji (`uncertaintyRadiusMeters`) do zdefiniowanego limitu bezpieczeństwa.
+  - Płynne przejście do trybu stacjonarnego `LAST_KNOWN` po przekroczeniu limitu czasu (`maxExtrapolationDurationMs`).
+
+- **Zdegradowany Silnik Nawigacji (`DegradedNavigationEngine`)**:
+  - `OFFLINE_CACHED_CORRIDOR`: Płynne prowadzenie wzdłuż geometrii trasy offline z kalkulacją błędu zejścia z trasy (Cross-Track Error) i ETA.
+  - `DIRECT_GEODETIC_BEARING`: Obliczanie ortodromy (Haversine) i azymutu geodezyjnego wprost do celu w przypadku zboczenia z trasy.
+  - `DEAD_RECKONING_BEACON`: Nawigacja kierunkowa w warunkach braku sygnału GNSS.
+  - `EMERGENCY_SAFE_HAVEN`: Automatyczne wyznaczanie kursu do najbliższej bazy bezpieczeństwa.
+
+- **Priorytetowy Bufor Telemetrii Offline (`OfflineTelemetryMeshBuffer`)**:
+  - Kolejka Store-and-Forward z 4 poziomami priorytetów (`EMERGENCY_CRITICAL`, `TELEMETRY_HIGH`, `POI_MEDIUM`, `DIAGNOSTIC_LOW`).
+  - Gwarantowana rezerwa slotów dla pakietów alarmowych / drenażu sesji (`emergencyReserveSlots`).
+  - Inteligentne kompaktowanie danych (downsampling pośrednich próbek telemetrii przy zachowaniu kluczowych punktów).
+  - Serializacja i deserializacja JSON pod kątem trwałej pamięci lokalnej (IndexedDB / LocalStorage).
+
+- **Nadzorca Siatki Odpornościowej (`FaultTolerantMeshSupervisor`)**:
+  - Centralna orkiestracja podsystemów, agregacja raportów zdrowia (`SubsystemHealthReport`, `MeshHealthSummary`).
+  - Pętla samoleczenia (`triggerSelfHealingRecovery`) przywracająca działanie po ustąpieniu awarii sprzętowych i sieciowych.
+
+---
+
+### 2. Neonowa Poświata na Mapie (Złota Nitka + Punkty Radaru POI — `lib/mapGlowLayers.ts` & `src/maplibre/glowLayers.ts`)
 Wielowarstwowy system efektów świetlnych optymalizowany pod kątem renderowania na GPU w MapLibre GL JS:
 - **Złota Nitka Trasy (`createGoldenThreadLayers`)**:
   - **Outer Amber Glow**: Rozmyta, szeroka poświata zewnętrzna z dynamicznym `line-blur` interpolowanym wraz z zoomem.
@@ -31,7 +89,7 @@ Wielowarstwowy system efektów świetlnych optymalizowany pod kątem renderowani
 
 ---
 
-### 2. Lekki Adapter GeoJSON dla Silnika MapLibre GL JS (`src/maplibre/geoJsonAdapter.ts` & `src/maplibre/expressions.ts`)
+### 3. Lekki Adapter GeoJSON dla Silnika MapLibre GL JS (`src/maplibre/geoJsonAdapter.ts` & `src/maplibre/expressions.ts`)
 Wysokowydajny, modularny adapter integrujący dane GeoJSON ze stylem i silnikiem MapLibre GL JS:
 - **Zarządzanie Źródłem i Warstwami (`MapLibreGeoJsonAdapter`)**:
   - Automatyczna rejestracja źródła GeoJSON i warstw (`circle`, `symbol`, `line`, `fill`, `heatmap`, `fill-extrusion`) z obsługą dynamicznego ładowania i przeładowywania stylów mapy (`style.load`).
@@ -49,7 +107,7 @@ Wysokowydajny, modularny adapter integrujący dane GeoJSON ze stylem i silnikiem
 
 ---
 
-### 3. Generator Zapytań Przestrzennych (`SpatialQueryGenerator` & `GeoSpatialUtils`)
+### 4. Generator Zapytań Przestrzennych (`SpatialQueryGenerator` & `GeoSpatialUtils`)
 Moduł geodezyjny i generator zapytań przestrzennych (`src/spatial/`):
 - **Wzory Geodezyjne i Matematyka Przestrzenna (`GeoSpatialUtils`)**:
   - `haversineDistance(coordA, coordB)`: Precyzyjna odległość ortodromiczna w metrach (Great-Circle Distance) na elipsoidzie WGS84.
@@ -61,285 +119,83 @@ Moduł geodezyjny i generator zapytań przestrzennych (`src/spatial/`):
 - **Generator Zapytań Przestrzennych (`SpatialQueryGenerator`)**:
   - **Bounding Box (`fromBBox`)**: Zapytania prostokątne `[minLon, minLat, maxLon, maxLat]`.
   - **Promień / Koło (`fromRadius`)**: Zapytania radialne ze środkiem `[lon, lat]` i promieniem w metrach.
-  - **Korytarz Trasy (`fromCorridor`)**: Bufor wokół trasy telemetrycznej (np. znajdź stacje benzynowe w promieniu 5 km wzdłuż trasy).
+  - **Korytarz Trasy (`fromCorridor`)**: Bufor wokół trasy telemetrycznej.
   - **Wielokąt / Geofence (`fromPolygon`)**: Dowolne obszary wielokątne.
 - **Wieloplatformowe Klauzule Zapytań (`GeneratedSpatialQuery`)**:
   - **PostGIS / PostgreSQL**: `ST_Intersects(geom, ST_MakeEnvelope(...))` oraz `ST_DWithin(geom::geography, ...)` z parametryzacją SQL `$1, $2, ...`.
-  - **MongoDB**: Filtry `$geoWithin` z `$box`, `$centerSphere` (promień w radianach) i `$geometry` (GeoJSON Polygon).
-  - **SQLite / SQL**: Klauzule zindeksowanych współrzędnych `(longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?)`.
-  - **GeoJSON Polygon**: Geometria RFC 7946 Polygon z zachowaniem reguły prawej ręki (right-hand rule).
-  - **URL Query Parameters**: Parametry HTTP API (np. `?spatial_type=radius&lat=52.22&lon=21.01&radius=5000`).
+  - **MongoDB**: Filtry `$geoWithin` z `$box`, `$centerSphere` i `$geometry`.
+  - **SQLite / SQL**: Klauzule zindeksowanych współrzędnych.
+  - **GeoJSON Polygon**: Geometria RFC 7946 Polygon.
+  - **URL Query Parameters**: Parametry HTTP API.
 
 ---
 
-### 4. Indeks Przestrzenny i Wyszukiwanie POI (`SpatialPoiIndex` & `PoiManager`)
-- Wbudowany in-memory indeks przestrzenny zintegrowany z silnikiem kontroli dostępu RBAC/ABAC:
-  - `searchBBox(bbox, options)`
-  - `searchRadius(center, radiusMeters, options)`
-  - `searchCorridor(coordinates, bufferMeters, options)`
-  - Sortowanie wyników według odległości od środka lub początku trasy.
-  - Paginacja (`limit`, `offset`), filtry kategorii, statusu, tenantów i tagów.
-  - Automatyczna sanityzacja pól poufnych (`[CONFIDENTIAL / MASKED]`) w wynikach wyszukiwania dla ról bez uprawnienia `POI_READ_SENSITIVE`.
+### 5. Dynamiczne Oświetlenie (Księżyc vs Słońce — `src/lighting/`)
+- Obliczanie pozycji słońca i księżyca, faz księżyca, cieni 3D i hillshade dla MapLibre GL JS w oparciu o efemerydy astronomiczne.
 
 ---
 
-### 5. Kontrakt Kategorii POI (`src/poi/`)
-Zapewnia ustrukturyzowany, zwalidowany schemat danych dla punktów zainteresowania (POI) w systemie:
-- **Hierarchia i Klasyfikacja**:
-  - `classification`: `'SYSTEM'` (wbudowane kategorie bazowe) vs `'CUSTOM'` (tworzone przez organizację/użytkownika).
-  - `status`: `'ACTIVE' | 'INACTIVE' | 'ARCHIVED'`.
-- **Kontrakt Stylu Mapowego (`PoiCategoryStyle`)**:
-  - `markerColor`, `iconName`, `iconSize`, `minZoom`, `maxZoom`, `zIndex`, `clusterable`, `pulseAnimation`.
-- **Kontrakt Atrybutów (`PoiFieldDefinition[]`)**:
-  - 12 typów danych (`PoiAttributeType`): `STRING`, `NUMBER`, `BOOLEAN`, `DATE`, `DATETIME`, `SELECT`, `MULTISELECT`, `EMAIL`, `PHONE`, `URL`, `JSON`, `COLOR`.
-  - Reguły walidacyjne: `min`, `max`, `pattern` (Regex), `options` (dozwolone wartości), `customValidator`.
-  - Oznaczanie pól poufnych (`sensitive: true`).
-- **7 Standardowych Kategorii Systemowych (`src/poi/defaultCategories.ts`)**:
-  1. `fuel_station` (`FUEL`): Stacje paliw, LPG, AdBlue, ładowarki EV, karty flotowe.
-  2. `warehouse_logistics` (`WH`): Centra dystrybucyjne, magazyny, liczba ramp, awizacje time-slot.
-  3. `customer_site` (`CUST`): Miejsca dostaw odbiorców, instrukcje rozładunku, telefony kontaktowe.
-  4. `rest_area_truck_stop` (`REST`): MOP / Parkingi TIR, prysznice, ochrona, miejsca postojowe.
-  5. `service_workshop` (`SRV`): Autoryzowane serwisy pojazdów, wulkanizacja, pomoc 24h.
-  6. `hazard_danger_zone` (`HAZARD`): Ograniczenia skrajni i tonażu, utrudnienia drogowe.
-  7. `checkpoint_toll` (`TOLL`): Bramki opłat viaTOLL/e-TOLL, kontrole drogowe, przejścia graniczne.
+### 6. Śluza Logowania (Zasada Jednej Kabiny) i Pancerny Drenaż Sesji (`src/auth/`)
+- Ścisła izolacja pojedynczej sesji (`AuthLockBooth`, `MobileAuthGate`).
+- Kaskadowy drenaż sesji po wylogowaniu / zdarzeniu panicznym (`clearRoute`, wyczyszczenie pamięci podręcznej, markerów, warstw i HUD).
 
 ---
 
-### 5. Matryca Uprawnień (Permissions Matrix — `src/poi/permissionsMatrix.ts`)
-Zaawansowany silnik kontroli dostępu (RBAC z elementami ABAC) integrujący się z tożsamością sesji (`UserSession`):
-- **Role Systemowe**: `ADMIN`, `DISPATCHER`, `MANAGER`, `OPERATOR`, `DRIVER`, `AUDITOR`, `VIEWER`, `GUEST`.
-- **Zabezpieczenia Biznesowe**:
-  - **Ochrona Kategorii Systemowych**: Modyfikacja lub usunięcie kategorii `SYSTEM` wymaga `CATEGORY_MANAGE_SYSTEM`.
-  - **Izolacja Wielotenantowa (`tenantId`)**: Weryfikacja spójności identyfikatora tenanta użytkownika i zasobu.
-  - **Sanityzacja Danych (`sanitizePoi`)**: Maskowanie danych poufnych dla nieuprawnionych ról.
+## Przykłady Użycia
 
----
-
-### 6. Szufladowy Kokpit z Poświatą HUD — Tailwind CSS (`components/TacticalBottomSheet.tsx` & `.ts`)
-Wysokowydajny szufladowy panel dolny (Bottom Sheet) w estetyce Cyberpunk HUD / Dark Obsidian z poświatą neonową:
-- **Mapowanie Klas Tailwind CSS (`TACTICAL_HUD_TAILWIND_CLASSES`)**:
-  - `container`: `fixed inset-x-0 bottom-0 z-50 flex flex-col bg-slate-950/95 text-slate-100 backdrop-blur-xl border-t border-cyan-500/30 shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_-2px_15px_rgba(0,240,255,0.2)] rounded-t-3xl`
-  - `grabberBar`: `w-12 h-1.5 rounded-full bg-slate-600/60 shadow-[0_0_8px_rgba(0,240,255,0.4)]`
-  - `tabItemActive`: `text-cyan-400 border-b-2 border-cyan-400 shadow-[0_2px_8px_rgba(0,240,255,0.3)]`
-  - `card`: `bg-slate-900/80 border border-cyan-500/20 hover:border-cyan-400/40`
-  - `actionButtonPrimary`: `bg-gradient-to-r from-cyan-500 to-blue-600 shadow-[0_0_20px_rgba(0,240,255,0.4)]`
-- **Snap Points (`TacticalSnapPoint`)**: `HIDDEN` (0 px), `PEEK` (84 px), `HALF` (45% wysokości ekranu), `EXPANDED` (88% wysokości ekranu).
-- **Gestury i Magnetyzm**: Płynne przeciąganie (`handleDragStart`, `handleDragMove`, `handleDragEnd`) z asystą prędkości (velocity fling) i zatrzaskiwaniem do najbliższego punktu.
-- **Zakładki Taktyczne (`TacticalSheetTab`)**: `RADAR_POI` (inspektor wybranego punktu), `TELEMETRY_ROUTE` (telemetria trasy), `ACTIONS` (operacje taktyczne).
-- **Generator Widoku HTML i Komponent JSX**: Metoda `renderHtml()` oraz fabryka funkcyjna `TacticalBottomSheet(props)` do natychmiastowej integracji w React / Next.js / PWA / React Native Web.
-- **Pancerny Drenaż Sesji (`SessionDrainHook`)**: Przy wylogowaniu lub zmianie użytkownika w śluzie stan jest bezwzględnie czyszczony, wybrane punkty/trasy usuwane, a panel chowany do stanu `HIDDEN`.
-
----
-
-### 7. Moduł Dynamicznego Światła Mapy — Księżyc vs Słońce (`src/lighting/`)
-Zaawansowany silnik symulacji astronomicznej i dynamicznego oświetlenia 3D dla MapLibre GL JS:
-- **Kalkulator Ciał Niebieskich (`CelestialCalculator`)**:
-  - Obliczenia Julian Date, wektorów deklinacji i rektascensji słońca i księżyca.
-  - Wyznaczanie kąta azymutu (0–360°), elewacji/wysokości nad horyzontem i kąta zenitu.
-  - Fazy dnia i nocy (`DayNightPhase`): `DAY`, `GOLDEN_HOUR_MORNING`, `CIVIL_DUSK`, `NAUTICAL_DUSK`, `ASTRONOMICAL_DUSK`, `NIGHT`.
-  - Faza i oświetlenie księżyca (`LunarEphemeris`): frakcja oświetlenia (0.0–1.0), wiek księżyca (0–29.53 dni) i nazwa fazy (`NEW_MOON`, `FULL_MOON`, itd.).
-- **Menedżer Dynamicznego Oświetlenia (`DynamicLightingManager`)**:
-  - Płynne przełączanie dominującego źródła światła (`SUN` vs `MOON`) z dynamiczną paletą barw (Złota Godzina, Południe, Srebrzysta Pełnia, Granatowy Nów).
-  - Automatyczna aktualizacja właściwości `setLight` na mapie MapLibre (kąty radialne, azymutalne i polarne).
-  - Synchronizacja cieniowania 3D terenu (`hillshade-illumination-direction`, `hillshade-shadow-color`) i budynków 3D (`fill-extrusion`).
-  - Pętla synchronizacji czasu rzeczywistego z opcjonalnym mnożnikiem przyspieszenia symulacji (`simulatedTimeMultiplier`).
-  - Pancerny drenaż sesji (`SessionDrainHook`): zatrzymanie timerów i reset przesunięcia czasu.
-
----
-
-### 8. Integracja z Koordynatorem Sesji (`src/integration/`)
-- `SecureTrackingSessionCoordinator`: Łączy `AuthLockBooth`, `MapLibreRouteManager`, `MapLibrePoiLayerManager`, `PoiManager`, `DynamicLightingManager` oraz `TacticalBottomSheetController` w spójny ekosystem bezpieczeństwa:
-  - Zmiana użytkownika w śluzie (`enterBooth`) bezwarunkowo drenuje trasę (`clearRoute`), punkty POI (`clearPoi`), oświetlenie (`drain`) oraz panel taktyczny (`drain`).
-  - Wyświetlanie POI (`displayPois`) automatycznie respektuje uprawnienia aktywnej sesji.
-
----
-
-## Architektura Modułów
-
-```
-components/
-├── TacticalMapCockpit.tsx    # Główny Widok Kokpitu (React + MapLibre, Top Bar, Floating Actions)
-├── TacticalMapCockpit.ts     # Kontroler Kokpitu (Orkiestracja Mapy, Śluzy, Oświetlenia i UI)
-├── TacticalBottomSheet.tsx   # Szufladowy Kokpit HUD (Komponent JSX, Tailwind CSS, Poświata)
-└── TacticalBottomSheet.ts    # Kontroler Taktycznego Panelu (Snap Points, Gestury, Drenaż)
-lib/
-└── mapGlowLayers.ts          # Neonowa Poświata na Mapie (Złota Nitka + Punkty Radaru POI)
-src/
-├── components/
-│   ├── TacticalMapCockpit.ts # Eksport komponentu TacticalMapCockpit
-│   └── TacticalBottomSheet.ts# Eksport komponentu TacticalBottomSheet
-├── lighting/
-│   ├── types.ts              # Typy oświetlenia dynamicznego (Solar/Lunar Ephemeris, Fazy, Paleta)
-│   ├── celestialCalculator.ts# Algorytmy pozycji Słońca i Księżyca (Julian Date, Azimuth, Altitude)
-│   └── dynamicLightingManager.ts # Menedżer światła MapLibre (Księżyc vs Słońce, Hillshade 3D, Cienie)
-├── maplibre/
-│   ├── types.ts              # Abstrakcja interfejsów MapLibre GL JS, oświetlenia 3D i zdarzeń
-│   ├── expressions.ts        # Helper wyrażeń stylów (feature-state, match, interpolate)
-│   ├── glowLayers.ts         # Warstwy neonowej poświaty (Złota Nitka + Punkty Radaru POI)
-│   ├── geoJsonAdapter.ts     # Lekki Adapter GeoJSON z cyklem życia i drenażem
-│   ├── routeManager.ts       # Zarządzanie trasami i procedura clearRoute
-│   └── poiLayerManager.ts    # Zarządzanie warstwami POI i procedura clearPoi
-├── spatial/
-│   ├── types.ts              # Definicje typów zapytań przestrzennych (BBox, Radius, Corridor)
-│   ├── geoUtils.ts           # Obliczenia geodezyjne (Haversine, DestinationPoint, Poligony)
-│   ├── queryGenerator.ts     # Generator zapytań (PostGIS, MongoDB, SQLite, URL, GeoJSON)
-│   └── spatialIndex.ts       # Indeks przestrzenny i silnik ewaluacji z uprawnieniami RBAC
-├── poi/
-│   ├── types.ts              # Typy POI, Kategorii, Schematów, Ról i Matrycy Uprawnień
-│   ├── schemaValidator.ts    # Walidator schematów atrybutów i integralności POI
-│   ├── permissionsMatrix.ts  # Matryca Uprawnień RBAC/ABAC i silnik ewaluacji
-│   ├── defaultCategories.ts  # 7 Wbudowanych Kategorii Systemowych
-│   ├── converter.ts          # Konwerter POI -> RFC 7946 GeoJSON FeatureCollection
-│   ├── categoryRegistry.ts   # Rejestr Kategorii POI
-│   └── poiManager.ts         # Menedżer POI ze wsparciem zapytań przestrzennych i drenażu
-├── geojson/
-│   ├── types.ts              # Definicje typów RFC 7946 GeoJSON
-│   ├── converter.ts          # Konwerter RouteData -> FeatureCollection (LineString + Point)
-│   └── validator.ts          # Walidacja zgodności RFC 7946
-├── auth/
-│   ├── mutex.ts              # Asynchroniczny Mutex dla śluzy
-│   ├── storage.ts            # Bezpieczne providery storage (InMemory, SafeBrowser)
-│   ├── drainManager.ts       # Menedżer drenażu sesji z AbortController & Hookami
-│   ├── authBooth.ts          # Śluza Logowania (Zasada Jednej Kabiny)
-│   ├── mobileTypes.ts        # Typy autoryzacji mobilnej i bootstrapu
-│   └── mobileGate.ts         # Śluza startowa mobilki (MobileAuthGate)
-├── integration/
-│   └── coordinator.ts        # Koordynator sesji, tras, POI, oświetlenia i UI
-└── index.ts                  # Główny punkt eksportu biblioteki
-```
-
----
-
-## Przykładowe Użycie
-
-### 1. Zastosowanie Neonowej Poświaty (Złota Nitka + Radar POI)
-
-```typescript
-import { applyNeonGlowLayers, NEON_GLOW_THEME } from 'tracker';
-// lub bezpośrednio: import { createGoldenThreadLayers, createPoiRadarLayers } from './lib/mapGlowLayers.js';
-
-// Rejestracja kompletnego zestawu warstw świetlnych na mapie
-const { goldenThreadLayerIds, poiRadarLayerIds, removeGlowLayers } = applyNeonGlowLayers(mapInstance, {
-  routeSourceId: 'tracker-route-source',
-  poiSourceId: 'tracker-poi-source',
-});
-
-// Natychmiastowe usunięcie warstw poświaty przy zmianie widoku
-// removeGlowLayers();
-```
-
-### 2. Użycie Lekkiego Adaptera GeoJSON dla MapLibre GL JS
-
-```typescript
-import { MapLibreGeoJsonAdapter, MapLibreExpressions } from 'tracker';
-
-// Inicjalizacja adaptera
-const poiAdapter = new MapLibreGeoJsonAdapter(mapInstance, {
-  sourceId: 'live-poi-source',
-  changeCursorOnHover: true,
-  autoFitBounds: true,
-  layers: [
-    {
-      id: 'poi-circles',
-      type: 'circle',
-      paint: {
-        'circle-radius': MapLibreExpressions.hoverState(10, 6),
-        'circle-color': MapLibreExpressions.get('markerColor'),
-        'circle-stroke-width': 2,
-        'circle-stroke-color': '#FFFFFF',
-      },
-    },
-  ],
-});
-
-// Rejestracja kliknięcia
-poiAdapter.onFeatureClick('poi-circles', (feature, event) => {
-  console.log('Kliknięto punkt:', feature.properties.name);
-});
-
-// Strumieniowe ładowanie danych
-poiAdapter.setData(poiFeatureCollection);
-```
-
-### 2. Generowanie Zapytań Przestrzennych dla PostGIS, MongoDB i HTTP API
-
-```typescript
-import { SpatialQueryGenerator } from 'tracker';
-
-// Generowanie zapytania kołowego (promień 25 km wokół Warszawy)
-const radiusQuery = SpatialQueryGenerator.fromRadius([21.0122, 52.2297], 25000, {
-  categoryIds: ['fuel_station'],
-  limit: 50,
-});
-
-console.log('PostGIS SQL:', radiusQuery.postGis.sql);
-// -> ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
-```
-
-### 3. Sterowanie Taktycznym Panelem Dolnym z Poświatą HUD (Tailwind CSS)
+### 1. Użycie Fault-Tolerant Mesh i Łańcucha Zastępczego (Graceful Degradation)
 
 ```typescript
 import {
-  TacticalBottomSheetController,
-  TacticalBottomSheet,
-  TACTICAL_HUD_TAILWIND_CLASSES,
+  FaultTolerantMeshSupervisor,
+  DegradationLevel,
+  ScreenRenderMode,
+  PositioningSource,
 } from 'tracker';
 
-// 1. Inicjalizacja kontrolera
-const sheetController = new TacticalBottomSheetController({
-  initialSnapPoint: 'PEEK',
-  neonThemeAccent: '#00F0FF',
-  onSnapChange: (snap) => console.log('Zmiana wysokości:', snap),
+// Inicjalizacja centralnego nadzorcy odporności na awarie
+const supervisor = new FaultTolerantMeshSupervisor({
+  initialCenter: [21.0122, 52.2297], // Warszawa
 });
 
-// Wybór punktu ze skanera POI
-sheetController.selectPoi(selectedPoi, poiCategory);
-
-// Zmiana wysokości (PEEK -> HALF -> EXPANDED)
-sheetController.setSnapPoint('HALF');
-
-// 2. Wygenerowanie gotowego szablonu HTML HUD lub użycie komponentu React/JSX
-const hudHtml = sheetController.renderHtml();
-const component = TacticalBottomSheet({ controller: sheetController });
-```
-
-### 4. Dynamiczne Oświetlenie Mapy (Słońce vs Księżyc, Fazy, 3D Hillshade)
-
-```typescript
-import { DynamicLightingManager, CelestialCalculator } from 'tracker';
-
-// Inicjalizacja menedżera światła powiązanego z mapą MapLibre
-const lightingManager = new DynamicLightingManager(mapInstance, {
-  observerCoordinate: [21.0122, 52.2297], // Warszawa
-  updateIntervalMs: 5000,                // Aktualizacja w czasie rzeczywistym
-  simulatedTimeMultiplier: 1.0,          // 1.0 = czas rzeczywisty (lub np. 3600 = 1h / sek)
-  onLightingChange: (state) => {
-    console.log(`Dominujące ciało: ${state.dominantBody} (${state.sun.phase})`);
-    console.log(`Księżyc: ${state.moon.phaseName}, oświetlenie: ${(state.moon.illuminatedFraction * 100).toFixed(1)}%`);
-  },
+// Rejestracja nasłuchiwania na zmiany poziomu degradacji
+supervisor.addEventListener((event) => {
+  console.log(`[MESH EVENT] ${event.type} | Poziom degradacji: ${event.degradationLevel}`);
 });
 
-// Ręczne ustawienie godziny (np. pełnia nocy)
-lightingManager.advanceHours(12);
-```
-
-### 5. Dwukierunkowe Spięcie Zdarzenia `onItemSelect` z MapLibre GL JS
-
-```typescript
-import {
-  SecureTrackingSessionCoordinator,
-  MapLibrePoiLayerManager,
-  TacticalBottomSheetController,
-} from 'tracker';
-
-// Kliknięcie w punkt na mapie lub wybór z panelu synchronizuje stan i widok:
-coordinator.onItemSelect('poi-radar-station', {
-  centerCamera: true, // Automatyczne przesunięcie kamery (easeTo/flyTo)
-  zoom: 15,           // Zbliżenie na wybrany obiekt
+// 1. Płynne pozyskiwanie pozycji (z automatycznym Dead Reckoning w razie utraty GPS)
+const fix = await supervisor.acquirePosition({
+  position: [21.0122, 52.2297],
+  speedKmh: 65,
+  headingDegrees: 90,
+  accuracyMeters: 4,
+  timestamp: Date.now(),
+  source: PositioningSource.GPS_STANDARD,
 });
+
+// 2. Bezawaryjne renderowanie ekranu (Zero Black Screen Guarantee)
+const screenHtml = await supervisor.renderScreen({
+  currentFix: fix,
+  activeRoute: null,
+  pois: [],
+  selectedPoi: null,
+  viewportCenter: [21.0122, 52.2297],
+  zoom: 12,
+  headingDegrees: 90,
+  degradationLevel: supervisor.getDegradationLevel(),
+});
+
+// 3. Wymuszenie trybu awaryjnego (Survival Mode) w sytuacji krytycznej
+supervisor.triggerEmergencySafeMode('CRITICAL_HARDWARE_FAILURE');
+console.log('Poziom degradacji:', supervisor.getDegradationLevel()); // CRITICAL_SURVIVAL (Level 4)
+
+// 4. Samoleczenie i powrót do pełnej sprawności
+supervisor.triggerSelfHealingRecovery();
 ```
 
-### 6. Główny Widok Kokpitu (React + MapLibre + Tactical HUD)
+---
+
+### 2. Główny Widok Kokpitu (React + MapLibre + Tactical HUD + Fault-Tolerant Mesh)
 
 ```typescript
 import {
@@ -348,7 +204,7 @@ import {
   TACTICAL_COCKPIT_TAILWIND_CLASSES,
 } from 'tracker';
 
-// Inicjalizacja głównego widoku kokpitu
+// Inicjalizacja głównego widoku kokpitu z wbudowanym Fault-Tolerant Mesh
 const cockpit = TacticalMapCockpit({
   map: mapInstance,
   authBooth: authLockBooth,
@@ -357,11 +213,15 @@ const cockpit = TacticalMapCockpit({
   onItemSelect: (poi) => console.log('Wybrano punkt:', poi?.name),
 });
 
-// Skan radarowy w promieniu 15 km
+// Pobranie aktualnego stanu zdrowia całego ekosystemu
+const healthSummary = cockpit.controller.getMeshSupervisor().getHealthSummary();
+console.log('Siatka w pełni sprawna:', healthSummary.isFullyOperational);
+
+// Wykonanie skanu radarowego
 cockpit.controller.performRadarScan(15000);
 
-// Przełączanie oświetlenia noc / dzień
-cockpit.controller.toggleDayNight(12);
+// Generowanie HTML kokpitu (z automatycznym renderowaniem awaryjnym w razie awarii GPU)
+const cockpitHtml = cockpit.controller.renderHtml();
 ```
 
 ---
@@ -369,7 +229,7 @@ cockpit.controller.toggleDayNight(12);
 ## Budowanie i Testy
 
 ```bash
-# Uruchomienie pełnego zestawu 136 testów jednostkowych i integracyjnych
+# Uruchomienie pełnego zestawu 176 testów jednostkowych i integracyjnych
 npm test
 
 # Kompilacja TypeScript (strict mode, zero błędów)

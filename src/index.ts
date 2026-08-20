@@ -50,3 +50,14 @@ export * from './lighting/dynamicLightingManager.js';
 
 // Integration Coordinator
 export * from './integration/coordinator.js';
+
+// Fault-Tolerant Mesh & Graceful Degradation Engine
+export * from './mesh/types.js';
+export * from './mesh/circuitBreaker.js';
+export * from './mesh/fallbackChain.js';
+export * from './mesh/deadReckoning.js';
+export * from './mesh/screenGuardian.js';
+export * from './mesh/degradedNavigation.js';
+export * from './mesh/offlineMeshBuffer.js';
+export * from './mesh/meshSupervisor.js';
+
